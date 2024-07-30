@@ -59,9 +59,9 @@ URL：https://cs-api.glitch.me/
 }
 
 
-・バグ報告（Slack）"https://cs-api.glitch.me/cs_api/report/" 【POST】
+・バグ報告"https://cs-api.glitch.me/cs_api/report/" 【POST】
 
-バグ報告をSlackに送信します。クラウドシステムサーバーが落ちていても報告可能。
+バグ報告を管理者に直接に送信します。クラウドシステムサーバーが落ちていても報告可能です。
 
 リクエストbody
 
@@ -75,6 +75,8 @@ URL：https://cs-api.glitch.me/
 
 ※"type"は、バグ報告の種類を選択可能。いくつか作成予定。
 
+※URLを入力するだけでは利用できません。
+
 出力
 
 {
@@ -83,5 +85,7 @@ URL：https://cs-api.glitch.me/
 
 }
 
+## iosショートカットアプリケーション
+準備中...
 ## お知らせ
 githubのほうにファイルを移行してきました。
