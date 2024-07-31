@@ -85,7 +85,7 @@ URL：https://cs-api.glitch.me/
 
 }
 
-## iosショートカットアプリケーション
+## iosショートカットアプリケーション(製作者　takechi・syun)
 https://www.icloud.com/shortcuts/3b7007c298314df389966ec4fed76656
 このリンクを押すと、バグ報告が出来るショートカットアプリがダウンロードできます。
 
