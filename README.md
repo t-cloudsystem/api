@@ -23,7 +23,7 @@ URL：https://cs-api.glitch.me/
 }
 
 
-・ユーザー情報取得 "https://cs-api.glitch.me/cs_api/user/<userID>/" 【GET】
+・ユーザー情報取得 "https://cs-api.glitch.me/cs_api/user/<ユーザーID>/" 【GET】
 
 ユーザーIDからそのユーザーの情報を返します。
 
@@ -42,7 +42,7 @@ URL：https://cs-api.glitch.me/
 }
 
 
-・ユーザーID取得 "https://cs-api.glitch.me/cs_api/userID/<ユーザー名>" 【GET】
+・ユーザーID取得 "https://cs-api.glitch.me/cs_api/userID/<ユーザー名>/" 【GET】
 
 ユーザー名から対応するユーザーIDを返します。
 
