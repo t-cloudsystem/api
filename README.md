@@ -4,7 +4,7 @@
 
 URL：https://cs-api.glitch.me/
 
-・APIサーバー情報取得 "https://cs-api.glitch.mehealth/" 【GET】
+・APIサーバー情報取得 "https://cs-api.glitch.me/health/" 【GET】
 
 サーバーの情報を返します。
 
