@@ -70,6 +70,6 @@ class FlaskAPI:
         def error_405(error):
             return jsonify({"message": "error", "status": 405}), 405
 
-        @self.pp.errorhandler(500)
+        @self.app.errorhandler(500)
         def error_500(error):
             return jsonify({"message": "error", "status": 500}), 500
