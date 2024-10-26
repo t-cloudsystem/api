@@ -227,7 +227,7 @@ class csPublicBot:
             channel = self.bot.get_channel(1258771478959226980)
             thread = await channel.create_thread(name="応募内容2", reason="テスト")
             link = thread.mention
-            await thread.send(f"スレッドが開始されました\n ||{interaction.user.mention} {self.cs_guild.get_role(int(os.environ.get("DISCORD_CS_ADMINROLE"))).mention}||")
+            await thread.send(f"スレッドが開始されました\n ||{interaction.user.mention} {self.cs_guild.get_role(int(os.environ.get('DISCORD_CS_ADMINROLE'))).mention}||")
             await interaction.response.send_message(f"{link} こちらで会話してください", ephemeral=True)
 
     async def on_ready(self):
