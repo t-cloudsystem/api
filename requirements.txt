@@ -1,1 +1,7 @@
 Flask
+Flask-Cors
+Flask-SocketIO
+discord.py
+python-dotenv
+requests
+scratchattach=1.7.3
