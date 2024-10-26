@@ -22,6 +22,7 @@ class SocketCom:
         else:
             self.flask_app = flask_app
 
+        self.cs_connected = False
         self.sio = SocketIO(self.flask_app)
 
         self.sio.on_event("connect", self._on_connect, namespace="/")
@@ -29,6 +30,7 @@ class SocketCom:
 
     def _on_connect(self):
         logger.info("CSサーバーが接続されました")
+        self.cs_connected = True
 
     def _handle_message(self, data):
         logger.debug(data)

@@ -1,4 +1,5 @@
 import json
+import time
 from logging import getLogger, StreamHandler, DEBUG
 
 from flask import Flask, request, jsonify
@@ -18,19 +19,57 @@ class FlaskAPI:
         self.app = Flask(name)
         CORS(self.app)
 
-        self.app.add_url_rule('/', 'top', self.topics)
-        self.app.add_url_rule('/pay', 'pay', self.pay)
+        self.socket = None
+        self.server_started = time.time()
+        self._set_url_rule()
 
         logger.debug(f"Registered routes: {self.app.url_map}")
 
     def get_app(self):
         return self.app
 
-    def topics(self):
-        print("あ")
-        return jsonify(['device1', 'device2'])
+    def add_cs_server(self, socket_com):
+        self.socket = socket_com
 
-    def pay(self):
-        data = request.data.decode('utf-8')
-        data = json.loads(data)
-        return json.dumps({'message': 'received', 'data': data})
+    def _set_url_rule(self):
+        @self.app.route('/')
+        def home():
+            return jsonify({
+                "website": "https://scratch.mit.edu/studios/33110478/",
+                "author": "@takechi-scratch",
+                "help": "https://scratch.mit.edu/users/takechi-scratch/"
+            })
+
+        @self.app.route('/health/')
+        def health():
+            if self.socket and self.socket.cs_connected:
+                cs_status = "OK"
+            else:
+                cs_status = "Not working"
+
+            return jsonify({
+                "version": "ver.2.0.1(beta)",
+                "uptime": time.time() - self.server_started,
+                "api_status": "OK",
+                "cs_status": cs_status
+            })
+
+        @self.app.errorhandler(400)
+        def error_400(error):
+            return jsonify({"message": "error", "status": 400}), 400
+
+        @self.app.errorhandler(403)
+        def error_403(error):
+            return jsonify({"message": "error", "status": 403}), 403
+
+        @self.app.errorhandler(404)
+        def error_404(error):
+            return jsonify({"message": "error", "status": 404}), 404
+
+        @self.app.errorhandler(405)
+        def error_405(error):
+            return jsonify({"message": "error", "status": 405}), 405
+
+        @self.pp.errorhandler(500)
+        def error_500(error):
+            return jsonify({"message": "error", "status": 500}), 500
