@@ -20,8 +20,8 @@ logger.setLevel(DEBUG)
 logger.addHandler(handler)
 logger.propagate = False
 
-flask_app = FlaskAPI(__name__).get_app()
-app = SocketCom(flask_app)
+flask_app = FlaskAPI(__name__)
+app = SocketCom(flask_app.app)
 cs_server = ConnectCS(app)
 flask_app.add_cs_server(app)
 

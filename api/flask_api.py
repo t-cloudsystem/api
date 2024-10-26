@@ -25,9 +25,6 @@ class FlaskAPI:
 
         logger.debug(f"Registered routes: {self.app.url_map}")
 
-    def get_app(self):
-        return self.app
-
     def add_cs_server(self, socket_com):
         self.socket = socket_com
 
