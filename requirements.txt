@@ -4,4 +4,4 @@ Flask-SocketIO
 discord.py
 python-dotenv
 requests
-scratchattach=1.7.3
+scratchattach==1.7.3
