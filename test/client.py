@@ -1,21 +1,40 @@
-import asyncio
-import websockets
+import socketio
+from datetime import datetime
 
 
-async def connect_to_websocket():
-    uri = "ws://127.0.0.1:50000/pipe"
-    try:
-        async with websockets.connect(uri, ping_timeout=10, close_timeout=20) as websocket:
-            # サーバーにメッセージを送信
-            await websocket.send("Hello, WebSocket!")
+class MyCustomNamespace(socketio.ClientNamespace):  # 名前空間を設定するクラス
+    def on_connect(self):
+        print('[{}] connect'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
-            # サーバーからのメッセージを受信
-            response = await websocket.recv()
-            print(f"Received from server: {response}")
-    except (websockets.exceptions.ConnectionClosedError, websockets.exceptions.InvalidURI, websockets.exceptions.ConnectionClosedOK) as e:
-        print(f"WebSocket error: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+    def on_disconnect(self):
+        print('[{}] disconnect'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
 
-# asyncioでクライアントを実行
-asyncio.run(connect_to_websocket())
+    def on_response(self, msg):
+        print('[{}] response : {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
+
+    def cs_res(self, msg):
+        print('[{}] CSresponse : {}'.format(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), msg))
+
+
+class SocketIOClient:
+    def __init__(self, host, path):
+        self.host = host
+        self.path = path
+        self.sio = socketio.Client()
+
+    def connect(self):
+        self.sio.register_namespace(MyCustomNamespace(self.path))  # 名前空間を設定
+        self.sio.connect(self.host)  # サーバーに接続
+        self.sio.start_background_task(self.my_background_task, 123)  # バックグラウンドタスクの登録 (123は引数の書き方の参考のため、処理には使っていない)
+        self.sio.wait()  # イベントが待ち
+
+    def my_background_task(self, my_argument):  # ここにバックグランド処理のコードを書く
+        while True:
+            input_data = input("send data:")  # ターミナルから入力された文字を取得
+            self.sio.emit('broadcast_message', input_data, namespace=self.path)  # ターミナルで入力された文字をサーバーに送信
+            self.sio.sleep(1)
+
+
+if __name__ == '__main__':
+    sio_client = SocketIOClient('http://127.0.0.1:50000', '/')  # SocketIOClientクラスをインスタンス化
+    sio_client.connect()

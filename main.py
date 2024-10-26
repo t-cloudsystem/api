@@ -1,9 +1,7 @@
-from gevent.pywsgi import WSGIServer
-from geventwebsocket.handler import WebSocketHandler
-
 from logging import getLogger, StreamHandler, DEBUG
 
 from api.flask_api import FlaskAPI
+from api.server_com import SocketCom, ConnectCS
 
 logger = getLogger(__name__)
 handler = StreamHandler()
@@ -12,21 +10,10 @@ logger.setLevel(DEBUG)
 logger.addHandler(handler)
 logger.propagate = False
 
-# websocket = None
-app = FlaskAPI(__name__).get_app()
-
+flask_app = FlaskAPI(__name__).get_app()
+app = SocketCom(flask_app)
+cs_server = ConnectCS(app)
 
 if __name__ == "__main__":
-    app.debug = True
-    host = 'localhost'
-    port = 50000
-
-    server = WSGIServer(
-        (host, port),
-        app,
-        handler_class=WebSocketHandler,
-        # log=logger
-    )
-
-    logger.info(f"Server running on ws://{host}:{port}/pipe")
-    server.serve_forever()
+    # "debug=True"を設定すると動かなくなります
+    app.run()

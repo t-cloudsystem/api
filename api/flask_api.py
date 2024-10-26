@@ -1,7 +1,4 @@
 import json
-import datetime
-import time
-import websocket
 from logging import getLogger, StreamHandler, DEBUG
 
 from flask import Flask, request, jsonify
@@ -23,11 +20,8 @@ class FlaskAPI:
 
         self.app.add_url_rule('/', 'top', self.topics)
         self.app.add_url_rule('/pay', 'pay', self.pay)
-        self.app.add_url_rule('/pipe', 'pipe', self.pipe)
 
-        logger.info(f"Registered routes: {self.app.url_map}")
-
-        return
+        logger.debug(f"Registered routes: {self.app.url_map}")
 
     def get_app(self):
         return self.app
@@ -40,30 +34,3 @@ class FlaskAPI:
         data = request.data.decode('utf-8')
         data = json.loads(data)
         return json.dumps({'message': 'received', 'data': data})
-
-    def pipe(self):
-        """websocketでメッセージを送信"""
-        logger.debug(request.environ)
-        logger.debug("アクセスあり")
-        if request.environ.get('wsgi.websocket'):
-            ws: websocket = request.environ['wsgi.websocket']
-            try:
-                while True:
-                    logger.debug("確認中")
-                    time.sleep(0.1)
-                    res = ws.receive()
-                    logger.info(f'[ws received] {res}')
-                    data = json.loads(res)
-                    if data is None:
-                        break
-                    ws.send(json.dumps(
-                        {'time': str(datetime.datetime.now()), 'message': data['value']}
-                    ))
-            except Exception as e:
-                logger.error(f"エラー発生 内容:{e}")
-            finally:
-                ws.close("終了")
-
-        logger.debug("完了")
-
-        return "websocket"
