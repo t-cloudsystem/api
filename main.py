@@ -26,8 +26,7 @@ cs_server = ConnectCS(app)
 flask_app.add_cs_server(app)
 
 cs_bot = csPublicBot()
-
 if __name__ == "__main__":
     with ThreadPoolExecutor(max_workers=2) as executor:
-        executor.submit(app.run)
+        executor.submit(app.run, port=os.getenv("PORT", 50000))
         executor.submit(cs_bot.bot.run, os.environ.get("DISCORD_TOKEN_CSPUBLIC"))
