@@ -40,7 +40,7 @@ class SocketCom:
         logger.debug("send message: {}".format(datetime_now))
 
     def run(self, app=None, host: str = "0.0.0.0", port: int = 50000, *args, **kwargs):
-        # なぜかデバッグモードは動かなくなる
+        # なぜかデバッグモードは動かなくなるので無効化
         kwargs["debug"] = False
         kwargs["log_output"] = True
 
@@ -52,6 +52,7 @@ class SocketCom:
 
     async def request_to_CS(self, request_type: str, data: Any) -> dict:
         self.sio.emit("cs_request", {"type": request_type, "data": data}, namespace="/")
+        return {}
 
 
 # CSサーバーとのデータのやり取り
@@ -68,8 +69,13 @@ class ConnectCS:
         else:
             self.socket = socket
 
-    def get_userinfo(self, username: str) -> dict:
-        self.socket.request_to_CS("get_userinfo", {"username": username})
+    async def get_userinfo(self, id: str) -> dict:
+        res = await self.socket.request_to_CS("get_userinfo", {"id": id})
+        return res
+
+    async def get_userID(self, username: str) -> dict:
+        res = await self.socket.request_to_CS("get_username", {"username": username})
+        return res
 
 
 if __name__ == "__main__":

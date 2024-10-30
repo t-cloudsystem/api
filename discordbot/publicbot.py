@@ -155,25 +155,28 @@ class csAuthOKView(discord.ui.View):
 
 
 class csApplyStartView(discord.ui.View):
-    def __init__(self, timeout=None):
+    def __init__(self, cs_server, timeout=None):
         super().__init__(timeout=timeout)
+        self.cs_server = cs_server
 
     @discord.ui.button(label="はじめる", custom_id="startapply", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
         await interaction.response.send_message("DMに内容を送信したので、ご確認ください！", ephemeral=True)
 
-        is_registered = True  # await ユーザー認証が完了している確認する&ユーザーの情報を取得
-        if is_registered:
-            authcode = 12345  # await discord_auth.issue_authcode(self.username.value, interaction.user.id)
-            embed = discord.Embed(title="管理者応募", description=f"応募ありがとうございます！\n[専用応募フォーム](https://docs.google.com/forms/d/e/1FAIpQLSemE_oSBe5p0ipVvyku4XDjFl5yZafyHdFhdXbrpBMZoAD-EA/viewform?usp=pp_url&entry.545537387={authcode})で必要事項を入力してください。\n認証コード\n```\n{authcode}\n```", color=0x558aff)
-            await interaction.user.send(content=str(authcode), embed=embed)
-        else:
+        if discord.utils.get(interaction.user.roles, name="CSuser") is None:
             embed = discord.Embed(title="管理者応募", description="あなたはまだユーザー認証が完了していないようです。", color=0xf04747)
             await interaction.user.send(embed=embed)
+            return
+
+        user = await self.cs_server.get_userinfo(interaction.user.id)
+
+        authcode = 12345  # await discord_auth.issue_authcode(self.username.value, interaction.user.id)
+        embed = discord.Embed(title="管理者応募", description=f"応募ありがとうございます！\n[専用応募フォーム](https://docs.google.com/forms/d/e/1FAIpQLSemE_oSBe5p0ipVvyku4XDjFl5yZafyHdFhdXbrpBMZoAD-EA/viewform?usp=pp_url&entry.545537387={authcode})で必要事項を入力してください。\n認証コード\n```\n{authcode}\n```", color=0x558aff)
+        await interaction.user.send(content=str(authcode), embed=embed)
 
 
 class csPublicBot:
-    def __init__(self):
+    def __init__(self, cs_server=None):
         self.intents = discord.Intents.default()
         self.intents.members = True  # メンバー管理の権限
         self.intents.message_content = True  # メッセージの内容を取得する権限
@@ -187,8 +190,14 @@ class csPublicBot:
         )
         self.tree = self.bot.tree
 
-        self.auth_view = None
-        self.apply_view = None
+        if cs_server:
+            self.cs_server = cs_server
+        else:
+            from ..api.server_com import ConnectCS
+            self.cs_server = ConnectCS()
+
+        self.auth_view = csAuthStartView()
+        self.apply_view = csApplyStartView(self.cs_server)
 
         self.register_decorator()
 
@@ -237,8 +246,6 @@ class csPublicBot:
         await self.bot.change_presence(status=discord.Status.online, activity=discord.Game("Python Bot"))
 
         await self.tree.sync()
-        self.auth_view = csAuthStartView()
-        self.apply_view = csApplyStartView()
         self.bot.add_view(self.auth_view)
         self.bot.add_view(self.apply_view)
         cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
