@@ -1,7 +1,7 @@
-Flask
-Flask-Cors
-Flask-SocketIO
-discord.py
-python-dotenv
-requests
+Flask==3.0.2
+Flask-Cors==5.0.0
+Flask-SocketIO==5.4.1
+discord.py==2.4.0
+python-dotenv==1.0.1
+requests==2.31.0
 scratchattach==1.7.3

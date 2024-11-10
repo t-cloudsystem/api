@@ -43,6 +43,7 @@ class SocketCom:
         # なぜかデバッグモードは動かなくなるので無効化
         kwargs["debug"] = False
         kwargs["log_output"] = True
+        kwargs["allow_unsafe_werkzeug"] = True
 
         if not app:
             app = self.flask_app
