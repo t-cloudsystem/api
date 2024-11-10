@@ -1,6 +1,7 @@
 import os
+import threading
+from time import sleep
 from logging import getLogger, StreamHandler, DEBUG
-from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 
@@ -25,8 +26,23 @@ app = SocketCom(flask_app.app)
 cs_server = ConnectCS(app)
 flask_app.add_cs_server(app)
 
-cs_bot = csPublicBot()
+cs_bot = csPublicBot(cs_server)
+
 if __name__ == "__main__":
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        executor.submit(app.run, port=os.getenv("PORT", 50000))
-        executor.submit(cs_bot.bot.run, os.environ.get("DISCORD_TOKEN_CSPUBLIC"))
+    t = []
+    t.append(threading.Thread(target=app.run, kwargs={"port": os.getenv("PORT", 50000)}, daemon=True))
+    t.append(threading.Thread(target=cs_bot.bot.run, args=(os.environ.get("DISCORD_TOKEN_CSPUBLIC"),), daemon=True))
+
+    [thread.start() for thread in t]
+
+    try:
+        while True:
+            sleep(1)
+
+    except KeyboardInterrupt:
+        logger.info("強制終了されました。スレッドを終了します。")
+
+    except Exception as e:
+        logger.error(f"エラーが発生しました。スレッドを終了します。 Exception: {e}")
+
+    logger.info("プログラムを終了します。")

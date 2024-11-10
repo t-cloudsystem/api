@@ -168,7 +168,7 @@ class csApplyStartView(discord.ui.View):
             await interaction.user.send(embed=embed)
             return
 
-        user = await self.cs_server.get_userinfo(interaction.user.id)
+        # user = await self.cs_server.get_userinfo(interaction.user.id)
 
         authcode = 12345  # await discord_auth.issue_authcode(self.username.value, interaction.user.id)
         embed = discord.Embed(title="管理者応募", description=f"応募ありがとうございます！\n[専用応募フォーム](https://docs.google.com/forms/d/e/1FAIpQLSemE_oSBe5p0ipVvyku4XDjFl5yZafyHdFhdXbrpBMZoAD-EA/viewform?usp=pp_url&entry.545537387={authcode})で必要事項を入力してください。\n認証コード\n```\n{authcode}\n```", color=0x558aff)
@@ -196,8 +196,9 @@ class csPublicBot:
             from ..api.server_com import ConnectCS
             self.cs_server = ConnectCS()
 
-        self.auth_view = csAuthStartView()
-        self.apply_view = csApplyStartView(self.cs_server)
+        # ここでviewを定義するとエラーになる
+        self.auth_view = None
+        self.apply_view = None
 
         self.register_decorator()
 
@@ -246,6 +247,9 @@ class csPublicBot:
         await self.bot.change_presence(status=discord.Status.online, activity=discord.Game("Python Bot"))
 
         await self.tree.sync()
+
+        self.auth_view = csAuthStartView()
+        self.apply_view = csApplyStartView(self.cs_server)
         self.bot.add_view(self.auth_view)
         self.bot.add_view(self.apply_view)
         cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
@@ -266,10 +270,6 @@ class csPublicBot:
         if message.guild is None:
             await message.reply(content="メッセージありがとうございます！こちらでのお問い合わせにはお答えできませんのでご了承ください。\n[お問い合わせチャンネル](https://discord.com/channels/1210843458932178994/1256881718766469131)のご利用をお願いします。")
             return
-
-        # if message.channel.name == "🧪｜コマンド" and message.content != "": # ボットのメッセージは無視
-        #     print("サーバー名", message.guild, "チャンネル", message.channel, "ID", message.author)
-        #     await message.reply(message.content)
 
 
 if __name__ == "__main__":
