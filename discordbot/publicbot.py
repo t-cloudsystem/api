@@ -27,39 +27,39 @@ cs_guild = None
 class discordAuth:
     hash_template = "{username}__{discord_id}__{time}"
 
-    def __init__(self, project_id) -> None:
+    def __init__(self, project_id: str) -> None:
         self.waiting_users = []
-        self.project_id = project_id
+        self.project_id = str(project_id)
 
     async def issue_authcode(self, username, discord_id):
         timestamp = int(time.time())
         self.waiting_users.append({"username": username, "discord_id": discord_id, "status": "waiting", "start_time": timestamp})
         authcode = await self._make_authcode(username, discord_id, timestamp)
-        logger.info(f"認証コード発行 {username}の認証コードを発行しました。 コード {authcode}")
+        logger.info(f"認証コード発行 DiscordID {discord_id} コード {authcode}")
         return authcode
 
     async def check_authcode(self, discord_id):
         discord_ids = [user["discord_id"] for user in self.waiting_users if user["status"] == "waiting"]
         if discord_id not in discord_ids:
-            return "not_found"
+            return "", "not_found"
 
         userdata = [user for user in self.waiting_users if user["discord_id"] == discord_id][-1]
         logs = [log for log in scratchattach.get_cloud_logs(self.project_id) if log["verb"] == "set_var" and log["name"] == "☁ AuthCode" and log["user"] == userdata["username"]]
         if len(logs) == 0:
-            return "not_found"
+            return userdata["username"], "not_found"
 
         log = logs[0]
         logger.debug(f"参照したクラウドログ {log}")
 
         if max(time.time(), log["timestamp"] / 1000) > userdata["start_time"] + 300 or log["timestamp"] / 1000 < userdata["start_time"]:
-            return "timeout"
+            return userdata["username"], "timeout"
 
         if str(log["value"]) == str(await self._make_authcode(userdata["username"], discord_id, userdata["start_time"])):
             # Scratchのユーザー名とDiscordのユーザーIDを紐づける
             userdata["status"] = "completed"
-            return "completed"
+            return userdata["username"], "completed"
         else:
-            return "wrong_authcode"
+            return userdata["username"], "wrong_authcode"
 
     async def is_registered(self, username):
         data = requests.get(f"https://api.scratch.mit.edu/users/{username}").json()
@@ -98,7 +98,7 @@ class csAuthSettingModal(discord.ui.Modal):
             authcode = await self.discord_auth.issue_authcode(self.username.value, interaction.user.id)
             scratch_URL = f"https://scratch.mit.edu/projects/{os.environ.get('SCRATCH_AUTH_PROJECT_ID')}/"
             embed = discord.Embed(title="ユーザー認証", description=f"ユーザー名が確認できました！\n5分以内に以下のコードを[入力用ページ]({scratch_URL})で入力して、下の「入力しました」ボタンを押してください。\n```\n{authcode}\n```", color=0x4459fe)
-            view = csAuthOKView(auth_project_id=os.environ.get("SCRATCH_AUTH_PROJECT_ID"), discord_auth=self.discord_auth)
+            view = csAuthOKView(discord_auth=self.discord_auth)
             view.add_item(discord.ui.Button(label="入力用ページ", url=scratch_URL, style=discord.ButtonStyle.link))
             await interaction.user.send(content=str(authcode), embed=embed, view=view)
         else:
@@ -112,7 +112,7 @@ class csAuthStartView(discord.ui.View):
 
     @discord.ui.button(label="はじめる", custom_id="startauth", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
-        await interaction.response.send_modal(csAuthSettingModal())
+        await interaction.response.send_modal(csAuthSettingModal(auth_project_id=os.environ.get("SCRATCH_AUTH_PROJECT_ID")))
 
 
 class csAuthOKView(discord.ui.View):
@@ -122,21 +122,26 @@ class csAuthOKView(discord.ui.View):
 
         if discord_auth:
             self.discord_auth = discord_auth
+            self.auth_project_id = self.discord_auth.project_id
         else:
             self.discord_auth = discordAuth(auth_project_id)
+            self.auth_project_id = auth_project_id
 
     @discord.ui.button(label="入力しました", custom_id="checkauth", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
         global cs_guild
 
-        status = await self.discord_auth.check_authcode(interaction.user.id)
+        scratch_username, status = await self.discord_auth.check_authcode(interaction.user.id)
         if status == "completed":
             description = "認証が完了しました！"
             color = 0x43b581
 
-            member = self.cs_guild.get_member(interaction.user.id)
-            await member.add_roles(discord.utils.get(self.cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
-            logger.info(f"ユーザー認証完了 {member.name}の認証完了")
+            member = cs_guild.get_member(interaction.user.id)
+            await member.add_roles(discord.utils.get(cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
+
+            await cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(f"手動でユーザー認証を完了しました。\nScratch: {scratch_username}\nDiscord: {member.id}")
+
+            logger.info(f"ユーザー認証完了 Scratch: {scratch_username} Discord: {member.id}")
         elif status == "timeout":
             description = "認証コードの期限が切れました。もう一度初めからやり直してください。"
             color = 0xf6a408
