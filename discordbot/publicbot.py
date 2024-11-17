@@ -139,7 +139,7 @@ class csAuthOKView(discord.ui.View):
             member = cs_guild.get_member(interaction.user.id)
             await member.add_roles(discord.utils.get(cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
 
-            await cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(f"手動でユーザー認証を完了しました。\nScratch: {scratch_username}\nDiscord: {member.id}")
+            await cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(f"ユーザー認証が完了しました。臨時で記録しています。\nScratch: {scratch_username}\nDiscord: {member.id}")
 
             logger.info(f"ユーザー認証完了 Scratch: {scratch_username} Discord: {member.id}")
         elif status == "timeout":
