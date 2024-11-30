@@ -4,4 +4,4 @@ Flask-SocketIO==5.4.1
 discord.py==2.4.0
 python-dotenv==1.0.1
 requests==2.31.0
-scratchattach==1.7.3
+scratchattach==2.1.6

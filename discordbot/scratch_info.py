@@ -1,0 +1,115 @@
+import re
+from logging import getLogger, StreamHandler, DEBUG, INFO
+from typing import Literal
+
+from discord import Embed
+import scratchattach as sa
+
+
+logger = getLogger(__name__)
+handler = StreamHandler()
+handler.setLevel(DEBUG)
+logger.setLevel(INFO)
+logger.addHandler(handler)
+logger.propagate = False
+
+
+class ScratchInfo:
+    def __init__(self, url: str = None, type: Literal["projects", "users", "studios"] = None, id: str = None) -> None:
+        """ScratchのURLから情報を取得します
+
+        Args:
+            url (str, optional): Scratchのプロジェクト、ユーザー、スタジオのいずれかのURL。url、またはtypeとidのどちらかが必須。
+            type (Literal[&quot;projects&quot;, &quot;users&quot;, &quot;studios&quot;], optional): IDのタイプ。idの指定が必要。
+            id (str, optional): プロジェクト、スタジオのIDまたはユーザー名。typeの指定が必要。
+
+        Raises:
+            ValueError: 引数不足の場合
+            ValueError: ScratchのURLではない場合
+        """
+        if not (url or (type and id)):
+            raise ValueError("URL、またはtypeとidのどちらかを指定してください")
+
+        if url:
+            self.url = url
+
+            scratch_pattern = r"(https?://scratch\.mit\.edu/)(projects|users|studios)/([a-zA-Z0-9\-_]+)/*"
+            match = re.search(scratch_pattern, self.url)
+            logger.debug(f"URL検出結果: {str(match)}")
+            if not match:
+                logger.debug(f"URL検出失敗 {self.url}")
+                raise ValueError(f"{self.url}はScratchのURLではありません")
+
+            self.type = match.group(2)
+            self.id = match.group(3)
+            logger.debug(f"検出成功 タイプ: {self.type} ID: {self.id}")
+        else:
+            self.type = type
+            self.id = id
+
+        self._get_info()
+
+    def _get_info(self) -> None:
+        if self.type == "projects":
+            self.data = sa.get_project(self.id)
+            if not isinstance(self.data, sa.Project):
+                raise ValueError(f"プロジェクト {self.id} が見つかりません")
+            self.author = self.data.author()
+        elif self.type == "users":
+            self.data = sa.get_user(self.id)
+            self.author = self.data
+        elif self.type == "studios":
+            self.data = sa.get_studio(self.id)
+            self.author = self.data.host()
+
+    def get_embed(self) -> Embed:
+        """情報からEmbedを生成します
+
+        Returns:
+            Embed: Discordで送信できるEmbedオブジェクト
+        """
+        embed = Embed(color=0xf8a936, url=self.url)
+        if self.type == "projects":
+            embed.title = self.data.title
+            embed.description = self.data.instructions
+            embed.set_image(url=f"https://uploads.scratch.mit.edu/get_image/project/{self.id}_360x270.png")
+        elif self.type == "users":
+            embed.title = self.data.username
+            embed.description = self.data.about_me
+            embed.set_image(url=self.data.icon_url)
+        elif self.type == "studios":
+            embed.title = self.data.title
+            embed.description = self.data.description
+            embed.set_image(url=f"https://uploads.scratch.mit.edu/get_image/gallery/{self.id}_510x300.png")
+
+        if len(embed.description) > 80:
+            embed.description = embed.description[:80] + "..."
+
+        embed.set_author(name=self.author.username, url=f"https://scratch.mit.edu/users/{self.author.username}/", icon_url=self.author.icon_url)
+        embed.set_footer(text="☁システム公式Bot",
+                         icon_url="https://api.takechi.cloud/src/icon/takechi_v2.1.png")
+        return embed
+
+
+def get_scratch_info(text: str) -> list[ScratchInfo]:
+    scratch_pattern = r"https?://scratch\.mit\.edu/(projects|users|studios)/[a-zA-Z0-9\-_]+/*"
+    m = re.finditer(scratch_pattern, text)
+    data = []
+    for match in m:
+        try:
+            data.append(ScratchInfo(text[match.start():match.end()]))
+        except ValueError:
+            logger.debug("情報取得失敗")
+    return data
+
+
+if __name__ == "__main__":
+    message = "たーけクラウドシステムがサービス再開するらしいよ https://scratch.mit.edu/projects/870204802/"
+    data = get_scratch_info(message)
+
+    for scratch_info in data:
+        try:
+            print(scratch_info.url)
+            print(scratch_info.get_embed())
+        except ValueError:
+            print("情報取得失敗")

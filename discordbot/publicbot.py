@@ -8,7 +8,10 @@ from dotenv import load_dotenv
 from discord.ext import commands
 import discord
 import requests
-import scratchattach
+from scratchattach import ScratchCloud, CloudActivity
+
+from discordbot.scratch_info import get_scratch_info
+
 
 load_dotenv(verbose=True)
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -44,17 +47,19 @@ class discordAuth:
             return "", "not_found"
 
         userdata = [user for user in self.waiting_users if user["discord_id"] == discord_id][-1]
-        logs = [log for log in scratchattach.get_cloud_logs(self.project_id) if log["verb"] == "set_var" and log["name"] == "☁ AuthCode" and log["user"] == userdata["username"]]
+        raw_logs: list[CloudActivity] = ScratchCloud(project_id=1071161378).logs()
+        logs = [cloud_activity for cloud_activity in raw_logs if cloud_activity.type == "set" and cloud_activity.var == "AuthCode" and cloud_activity.username == userdata["username"]]
+
         if len(logs) == 0:
             return userdata["username"], "not_found"
 
         log = logs[0]
-        logger.debug(f"参照したクラウドログ {log}")
+        logger.debug(f"参照したクラウドログ {log.value}")
 
-        if max(time.time(), log["timestamp"] / 1000) > userdata["start_time"] + 300 or log["timestamp"] / 1000 < userdata["start_time"]:
+        if max(time.time(), log.timestamp / 1000) > userdata["start_time"] + 300 or log.timestamp / 1000 < userdata["start_time"]:
             return userdata["username"], "timeout"
 
-        if str(log["value"]) == str(await self._make_authcode(userdata["username"], discord_id, userdata["start_time"])):
+        if str(log.value) == str(await self._make_authcode(userdata["username"], discord_id, userdata["start_time"])):
             # Scratchのユーザー名とDiscordのユーザーIDを紐づける
             userdata["status"] = "completed"
             return userdata["username"], "completed"
@@ -275,6 +280,10 @@ class csPublicBot:
         if message.guild is None:
             await message.reply(content="メッセージありがとうございます！こちらでのお問い合わせにはお答えできませんのでご了承ください。\n[お問い合わせチャンネル](https://discord.com/channels/1210843458932178994/1256881718766469131)のご利用をお願いします。")
             return
+
+        data = get_scratch_info(message.content)
+        if data:
+            await message.channel.send(embeds=[scratch_info.get_embed() for scratch_info in data])
 
 
 if __name__ == "__main__":
