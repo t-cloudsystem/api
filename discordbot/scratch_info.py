@@ -15,13 +15,15 @@ logger.propagate = False
 
 
 class ScratchInfo:
-    def __init__(self, url: str = None, type: Literal["projects", "users", "studios"] = None, id: str = None) -> None:
+    def __init__(self, url: str = None, type: Literal["projects", "users", "studios"] = None, id: str = None,
+                 bot_icon_url: str = "https://api.takechi.cloud/src/icon/takechi_v2.1.png") -> None:
         """ScratchのURLから情報を取得します
 
         Args:
             url (str, optional): Scratchのプロジェクト、ユーザー、スタジオのいずれかのURL。url、またはtypeとidのどちらかが必須。
             type (Literal[&quot;projects&quot;, &quot;users&quot;, &quot;studios&quot;], optional): IDのタイプ。idの指定が必要。
             id (str, optional): プロジェクト、スタジオのIDまたはユーザー名。typeの指定が必要。
+            bot_icon_url (str, optional): 埋め込みのフッターに表示するアイコンのURL。デフォルトはtakechiのアイコン。
 
         Raises:
             ValueError: 引数不足の場合
@@ -47,6 +49,7 @@ class ScratchInfo:
             self.type = type
             self.id = id
 
+        self.bot_icon_url = bot_icon_url
         self._get_info()
 
     def _get_info(self) -> None:
@@ -71,33 +74,35 @@ class ScratchInfo:
         embed = Embed(color=0xf8a936, url=self.url)
         if self.type == "projects":
             embed.title = self.data.title
-            embed.description = self.data.instructions
+            description = self.data.instructions
             embed.set_image(url=f"https://uploads.scratch.mit.edu/get_image/project/{self.id}_360x270.png")
         elif self.type == "users":
             embed.title = self.data.username
-            embed.description = self.data.about_me
+            description = self.data.about_me
             embed.set_image(url=self.data.icon_url)
         elif self.type == "studios":
             embed.title = self.data.title
-            embed.description = self.data.description
+            description = self.data.description
             embed.set_image(url=f"https://uploads.scratch.mit.edu/get_image/gallery/{self.id}_510x300.png")
 
-        if len(embed.description) > 80:
-            embed.description = embed.description[:80] + "..."
+        if len(description) > 80:
+            embed.description = description[:80] + "..."
+        else:
+            embed.description = description
 
         embed.set_author(name=self.author.username, url=f"https://scratch.mit.edu/users/{self.author.username}/", icon_url=self.author.icon_url)
-        embed.set_footer(text="☁システム公式Bot",
-                         icon_url="https://api.takechi.cloud/src/icon/takechi_v2.1.png")
+        embed.set_footer(text="🗑️リアクションで削除",
+                         icon_url=self.bot_icon_url)
         return embed
 
 
-def get_scratch_info(text: str) -> list[ScratchInfo]:
+def get_scratch_info(text: str, bot_icon_url: str = None) -> list[ScratchInfo]:
     scratch_pattern = r"https?://scratch\.mit\.edu/(projects|users|studios)/[a-zA-Z0-9\-_]+/*"
     m = re.finditer(scratch_pattern, text)
     data = []
     for match in m:
         try:
-            data.append(ScratchInfo(text[match.start():match.end()]))
+            data.append(ScratchInfo(text[match.start():match.end()], bot_icon_url=bot_icon_url))
         except ValueError:
             logger.debug("情報取得失敗")
     return data

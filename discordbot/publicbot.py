@@ -187,11 +187,6 @@ class csApplyStartView(discord.ui.View):
 
 class csPublicBot:
     def __init__(self, cs_server=None):
-        self.intents = discord.Intents.default()
-        self.intents.members = True  # メンバー管理の権限
-        self.intents.message_content = True  # メッセージの内容を取得する権限
-
-        # Botをインスタンス化
         self.bot = commands.Bot(
             command_prefix="c!",
             case_insensitive=True,
@@ -210,15 +205,16 @@ class csPublicBot:
         self.auth_view = None
         self.apply_view = None
 
-        self.register_decorator()
+        self._register_decorator()
 
-    def register_decorator(self):
+    def _register_decorator(self):
         """クラスで定義されたコマンドを登録
         """
 
         # デコレーターを利用せずにイベントを登録
         self.on_ready = self.bot.event(self.on_ready)
         self.on_message = self.bot.event(self.on_message)
+        self.on_raw_reaction_add = self.bot.event(self.on_raw_reaction_add)
 
         @self.tree.command(name="cs_auth", description="ユーザー認証のテンプレートを表示します。")
         async def auth_command(interaction: discord.Interaction):
@@ -250,6 +246,30 @@ class csPublicBot:
             await thread.send(f"スレッドが開始されました\n ||{interaction.user.mention} {self.cs_guild.get_role(int(os.environ.get('DISCORD_CS_ADMINROLE'))).mention}||")
             await interaction.response.send_message(f"{link} こちらで会話してください", ephemeral=True)
 
+    async def _delete_info(self, payload: discord.RawReactionActionEvent):
+        """作成した情報の埋め込みを削除
+
+        Args:
+            payload (discord.RawReactionActionEvent): on_raw_reaction_addのペイロード
+        """
+        channel = self.bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+
+        sent_by_me = self.bot.user.id == message.author.id
+        if sent_by_me and message.embeds[0].footer.text != "🗑️リアクションで削除":
+            logger.debug("削除対象外の埋め込み")
+            return
+
+        try:
+            ref_message = await channel.fetch_message(message.reference.message_id)
+        except discord.errors.NotFound:
+            logger.debug("元メッセージが見つからないため誰でも削除可能")
+            ref_message = None
+
+        if not ref_message or ref_message.author.id == payload.user_id:
+            await message.delete()
+            logger.info(f"埋め込みを削除しました {message.id}")
+
     async def on_ready(self):
         global cs_guild
 
@@ -273,7 +293,6 @@ class csPublicBot:
         logger.info("Botの準備ができました！")
 
     async def on_message(self, message: discord.Message):
-        """メッセージをおうむ返しにする処理"""
         if message.author.bot:
             return
 
@@ -281,9 +300,15 @@ class csPublicBot:
             await message.reply(content="メッセージありがとうございます！こちらでのお問い合わせにはお答えできませんのでご了承ください。\n[お問い合わせチャンネル](https://discord.com/channels/1210843458932178994/1256881718766469131)のご利用をお願いします。")
             return
 
-        data = get_scratch_info(message.content)
+        app_info = await self.bot.application_info()
+        data = get_scratch_info(message.content, app_info.icon.url)
         if data:
-            await message.channel.send(embeds=[scratch_info.get_embed() for scratch_info in data])
+            await message.reply(embeds=[scratch_info.get_embed() for scratch_info in data], mention_author=False)
+
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        logger.debug(f"リアクション追加 {payload.emoji.name}")
+        if payload.emoji.name == "🗑️":
+            await self._delete_info(payload)
 
 
 if __name__ == "__main__":

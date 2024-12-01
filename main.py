@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     try:
         while True:
-            sleep(1)
+            sleep(60)
 
     except KeyboardInterrupt:
         logger.info("強制終了されました。スレッドを終了します。")
