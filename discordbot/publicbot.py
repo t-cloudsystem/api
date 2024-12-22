@@ -28,6 +28,9 @@ logger.propagate = False
 
 cs_guild = None
 
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
 
 class discordAuth:
     hash_template = "{username}__{discord_id}__{time}"
@@ -193,7 +196,7 @@ class csPublicBot:
             command_prefix="c!",
             case_insensitive=True,
             help_command=None,
-            intents=discord.Intents.all()
+            intents=intents
         )
         self.tree = self.bot.tree
 
