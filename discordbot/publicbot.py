@@ -1,8 +1,10 @@
 import datetime
+import random
 import time
 import os
 import hashlib
 from logging import getLogger, StreamHandler, DEBUG
+from asyncio import sleep
 
 from dotenv import load_dotenv
 from discord.ext import commands
@@ -273,9 +275,6 @@ class csPublicBot:
     async def on_ready(self):
         global cs_guild
 
-        # BOTのステータスを変更する
-        await self.bot.change_presence(status=discord.Status.online, activity=discord.Game("Python Bot"))
-
         await self.tree.sync()
 
         self.auth_view = csAuthStartView()
@@ -291,6 +290,11 @@ class csPublicBot:
             logger.warning("チャンネルIDが見つかりません")
 
         logger.info("Botの準備ができました！")
+
+        while True:
+            text = "".join([random.choice(["ク", "ラ", "ウ", "ド"]) for _ in range(4)])
+            await self.bot.change_presence(status=discord.Status.online, activity=discord.Game(text + "システム"))
+            await sleep(5)
 
     async def on_message(self, message: discord.Message):
         if message.author.bot:
