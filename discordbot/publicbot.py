@@ -4,10 +4,9 @@ import time
 import os
 import hashlib
 from logging import getLogger, StreamHandler, DEBUG
-from asyncio import sleep
 
 from dotenv import load_dotenv
-from discord.ext import commands
+from discord.ext import commands, tasks
 import discord
 import requests
 from scratchattach import ScratchCloud, CloudActivity
@@ -31,6 +30,21 @@ cs_guild = None
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+
+
+class RandomStatusTask(commands.Cog):
+    def __init__(self, bot: commands.Bot) -> None:
+        self.bot = bot
+        self.change_status.start()
+
+    def cog_unload(self):
+        self.change_status.cancel()
+
+    @tasks.loop(seconds=5.0)
+    async def change_status(self):
+        text = "".join([random.choice(["ク", "ラ", "ウ", "ド"]) for _ in range(4)])
+        await self.bot.change_presence(status=discord.Status.online, activity=discord.Game(text + "システム"))
+
 
 class discordAuth:
     hash_template = "{username}__{discord_id}__{time}"
@@ -292,12 +306,8 @@ class csPublicBot:
         else:
             logger.warning("チャンネルIDが見つかりません")
 
+        RandomStatusTask(self.bot)
         logger.info("Botの準備ができました！")
-
-        while True:
-            text = "".join([random.choice(["ク", "ラ", "ウ", "ド"]) for _ in range(4)])
-            await self.bot.change_presence(status=discord.Status.online, activity=discord.Game(text + "システム"))
-            await sleep(5)
 
     async def on_message(self, message: discord.Message):
         if message.author.bot:
