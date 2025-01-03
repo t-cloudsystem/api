@@ -65,6 +65,10 @@ class FlaskAPI:
 
         @self.app.route("/ads/<int:ad_id>/")
         def takechi_ad(ad_id):
+            ip_address = request.remote_addr
+
+            res = self.cs_server.view_ad(ad_id, ip_address)
+
             return self._make_res({
                 "ad_id": ad_id,
                 "ad_name": "takechi",
