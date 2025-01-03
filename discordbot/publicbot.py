@@ -12,6 +12,7 @@ import requests
 from scratchattach import ScratchCloud, CloudActivity
 
 from discordbot.scratch_info import get_scratch_info
+from discordbot.daily_projects import DailyProjects
 
 
 load_dotenv(verbose=True)
@@ -223,9 +224,10 @@ class csPublicBot:
             from ..api.server_com import ConnectCS
             self.cs_server = ConnectCS()
 
-        # ここでviewを定義するとエラーになる
+        # runの後に定義しなければいけないものたち
         self.auth_view = None
         self.apply_view = None
+        self.daily_projects = None
 
         self._register_decorator()
 
@@ -256,7 +258,7 @@ class csPublicBot:
             else:
                 await interaction.response.send_message(embed=embed, view=self.apply_view, ephemeral=True)
 
-        @self.tree.command(name="make_threads", description="スレッドを作成します。")
+        @self.tree.command(name="admin_make_threads", description="スレッドを作成します。")
         async def make_threads(interaction: discord.Interaction):
             # 送信したユーザーがadminロールを持っているか
             if discord.utils.get(interaction.user.roles, name="admin") is None:
@@ -267,6 +269,16 @@ class csPublicBot:
             link = thread.mention
             await thread.send(f"スレッドが開始されました\n ||{interaction.user.mention} {self.cs_guild.get_role(int(os.environ.get('DISCORD_CS_ADMINROLE'))).mention}||")
             await interaction.response.send_message(f"{link} こちらで会話してください", ephemeral=True)
+
+        @self.tree.command(name="admin_decide_daily_project", description="手動で今日の作品を選出します。")
+        async def decide_daily_project(interaction: discord.Interaction):
+            # 送信したユーザーがadminロールを持っているか
+            if discord.utils.get(interaction.user.roles, name="admin") is None:
+                await interaction.response.send_message("実行権限がありません。", ephemeral=True)
+
+            await interaction.response.defer()
+            await self.daily_projects.decide_daily_project()
+            await interaction.followup.send("選出が完了しました", ephemeral=True)
 
     async def _delete_info(self, payload: discord.RawReactionActionEvent):
         """作成した情報の埋め込みを削除
@@ -301,6 +313,8 @@ class csPublicBot:
         self.apply_view = csApplyStartView(self.cs_server)
         self.bot.add_view(self.auth_view)
         self.bot.add_view(self.apply_view)
+        self.daily_projects = DailyProjects(self.bot)
+
         cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
 
         channel = self.bot.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID")))

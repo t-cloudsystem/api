@@ -49,6 +49,16 @@ class ScratchInfo:
             self.type = type
             self.id = id
 
+            if self.type not in ["projects", "users", "studios"]:
+                raise ValueError(f"タイプ {self.type} は無効です")
+
+            if self.type == "projects":
+                self.url = f"https://scratch.mit.edu/projects/{self.id}/"
+            elif self.type == "users":
+                self.url = f"https://scratch.mit.edu/users/{self.id}/"
+            elif self.type == "studios":
+                self.url = f"https://scratch.mit.edu/studios/{self.id}/"
+
         self.bot_icon_url = bot_icon_url
         self._get_info()
 
@@ -65,7 +75,7 @@ class ScratchInfo:
             self.data = sa.get_studio(self.id)
             self.author = self.data.host()
 
-    def get_embed(self) -> Embed:
+    def get_embed(self, can_delete: bool = True) -> Embed:
         """情報からEmbedを生成します
 
         Returns:
@@ -91,8 +101,10 @@ class ScratchInfo:
             embed.description = description
 
         embed.set_author(name=self.author.username, url=f"https://scratch.mit.edu/users/{self.author.username}/", icon_url=self.author.icon_url)
-        embed.set_footer(text="🗑️リアクションで削除",
-                         icon_url=self.bot_icon_url)
+
+        if can_delete:
+            embed.set_footer(text="🗑️リアクションで削除", icon_url=self.bot_icon_url)
+
         return embed
 
 
