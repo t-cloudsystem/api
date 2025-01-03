@@ -1,8 +1,14 @@
 import datetime
+import os
+from os import path
 from logging import getLogger, StreamHandler, DEBUG
 from typing import Any
 
+import requests
 from flask_socketio import SocketIO, emit
+from dotenv import load_dotenv
+
+load_dotenv(path.join(path.dirname(__file__), '.env'), verbose=True)
 
 logger = getLogger(__name__)
 handler = StreamHandler()
@@ -39,6 +45,20 @@ class SocketCom:
         emit("response", str(datetime_now), namespace="/", include_self=True)
         logger.debug("send message: {}".format(datetime_now))
 
+    def get_data(self, function: str, data: dict) -> dict:
+        data["function"] = function
+        data["apiKey"] = os.environ["INNER_API_KEY"]
+
+        res = requests.get(os.environ["INNER_API_URL"], params=data, headers={"Content-Type": "application/json"})
+        return res.json()
+
+    def post_data(self, function: str, data: dict) -> dict:
+        data["function"] = function
+        data["apiKey"] = os.environ["INNER_API_KEY"]
+
+        res = requests.post(os.environ["INNER_API_URL"], data=data, headers={"Content-Type": "application/json"})
+        return res.json()
+
     def run(self, app=None, host: str = "0.0.0.0", port: int = 50000, *args, **kwargs):
         # なぜかデバッグモードは動かなくなるので無効化
         kwargs["debug"] = False
@@ -66,20 +86,24 @@ class ConnectCS:
         """
 
         if not socket:
-            self.socket = SocketCom()
+            self.com = SocketCom()
         else:
-            self.socket = socket
+            self.com = socket
 
     async def get_userinfo(self, id: str) -> dict:
-        res = await self.socket.request_to_CS("get_userinfo", {"id": id})
+        res = await self.com.request_to_CS("get_userinfo", {"id": id})
         return res
 
     async def get_userID(self, username: str) -> dict:
-        res = await self.socket.request_to_CS("get_username", {"username": username})
+        res = await self.com.request_to_CS("get_username", {"username": username})
         return res
+
+    def view_ad(self, ad_id: int, ip_address: str) -> dict:
+        res = self.com.post_data("incrementAdViews", {"adId": ad_id, "ipAddress": ip_address})
+        return res.get("url")  # レスポンスの仕様待ち
 
 
 if __name__ == "__main__":
     serversocket = ConnectCS()
 
-    serversocket.socket.run()
+    serversocket.com.run()

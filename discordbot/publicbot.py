@@ -42,8 +42,11 @@ class RandomStatusTask(commands.Cog):
 
     @tasks.loop(seconds=5.0)
     async def change_status(self):
-        text = "".join([random.choice(["ク", "ラ", "ウ", "ド"]) for _ in range(4)])
-        await self.bot.change_presence(status=discord.Status.online, activity=discord.Game(text + "システム"))
+        try:
+            text = "".join([random.choice(["ク", "ラ", "ウ", "ド"]) for _ in range(4)])
+            await self.bot.change_presence(status=discord.Status.online, activity=discord.Game(text + "システム"))
+        except Exception as e:
+            logger.error(f"ステータス変更中にエラーが発生しました {e}")
 
 
 class discordAuth:

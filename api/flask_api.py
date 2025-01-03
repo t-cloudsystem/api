@@ -4,6 +4,9 @@ from logging import getLogger, StreamHandler, DEBUG
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
 
 logger = getLogger(__name__)
 handler = StreamHandler()
@@ -15,29 +18,38 @@ logger.propagate = False
 
 class FlaskAPI:
     def __init__(self, name):
-        self.websocket = None
         self.app = Flask(name)
         CORS(self.app)
+        self.app.json.sort_keys = False
+        self.limiter = Limiter(key_func=get_remote_address, app=self.app, default_limits=["30 per minute"])
 
-        self.socket = None
+        self.cs_server = None
         self.server_started = time.time()
         self._set_url_rule()
+        self._set_error_rule()
 
         logger.debug(f"Registered routes: {self.app.url_map}")
 
-    def add_cs_server(self, socket_com):
-        self.socket = socket_com
+    def add_cs_server(self, cs_server):
+        self.cs_server = cs_server
+
+    def _make_res(self, data=None, status: int = 200, message: str = None):
+        res_data = {"data": data, "status": int(status)}
+        if message is not None:
+            res_data["message"] = message
+
+        return jsonify(res_data), int(status)
 
     def _set_url_rule(self):
-        @self.app.route('/')
+        @self.app.route("/")
         def home():
-            return jsonify({
+            return self._make_res({
                 "website": "https://scratch.mit.edu/studios/33110478/",
                 "author": "@takechi-scratch",
                 "help": "https://scratch.mit.edu/users/takechi-scratch/"
             })
 
-        @self.app.route('/health/')
+        @self.app.route("/health/")
         def health():
             if self.socket and self.socket.cs_connected:
                 cs_status = "OK"
@@ -51,22 +63,35 @@ class FlaskAPI:
                 "cs_status": cs_status
             })
 
+        @self.app.route("/ads/<int:ad_id>/")
+        def takechi_ad(ad_id):
+            return self._make_res({
+                "ad_id": ad_id,
+                "ad_name": "takechi",
+                "ad_url": "https://scratch.mit.edu/projects/536982758/"
+            })
+
+    def _set_error_rule(self):
         @self.app.errorhandler(400)
         def error_400(error):
-            return jsonify({"message": "error", "status": 400}), 400
+            return self._make_res(status=400, message="Bad Request")
 
         @self.app.errorhandler(403)
         def error_403(error):
-            return jsonify({"message": "error", "status": 403}), 403
+            return self._make_res(status=403, message="Forbidden")
 
         @self.app.errorhandler(404)
         def error_404(error):
-            return jsonify({"message": "error", "status": 404}), 404
+            return self._make_res(status=404, message="Not Found")
 
         @self.app.errorhandler(405)
         def error_405(error):
-            return jsonify({"message": "error", "status": 405}), 405
+            return self._make_res(status=405, message="Method Not Allowed")
+
+        @self.app.errorhandler(429)
+        def error_429(error):
+            return self._make_res(status=429, message="Too Many Requests")
 
         @self.app.errorhandler(500)
         def error_500(error):
-            return jsonify({"message": "error", "status": 500}), 500
+            return self._make_res(status=500, message="Internal Server Error")
