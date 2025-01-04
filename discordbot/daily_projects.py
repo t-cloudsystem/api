@@ -22,7 +22,8 @@ JST = datetime.timezone(datetime.timedelta(hours=9))
 
 # 宣伝をする時刻
 start_times = [
-    datetime.time(hour=7, minute=0, tzinfo=JST)
+    datetime.time(hour=7, minute=0, tzinfo=JST),
+    datetime.time(hour=19, minute=0, tzinfo=JST),
 ]
 
 
