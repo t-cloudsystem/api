@@ -87,7 +87,7 @@ class DailyProjects(commands.Cog):
         choiced_project = random.choices(projects_id, k=1, weights=projects_weight)[0]
         logger.info(f"選ばれた作品: {choiced_project.title}")
 
-        text = f"## 今日の作品\nhttps://scratch.mit.edu/projects/{choiced_project.id}"
+        text = f"## 今日の作品\nhttps://scratch.mit.edu/projects/{choiced_project.id}\n|| <@&1324929451175313438> ||"
         embed = ScratchInfo(type="projects", id=choiced_project.id).get_embed(can_delete=False)
 
         channel = self.bot.get_channel(int(self.channel_id))
