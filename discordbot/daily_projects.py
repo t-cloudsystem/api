@@ -99,3 +99,9 @@ class DailyProjects(commands.Cog):
         TODAY = datetime.datetime.now(JST).strftime("%Y/%m/%d")
         await message.create_thread(name=TODAY+" 作品", reason=f"今日の作品(自動作成) {TODAY}")
         logger.debug("スレッドを作成しました")
+
+        requests.post(self.api_url, json={
+            "id": choiced_project.id,
+            "title": choiced_project.title,
+            "pass": self.api_pass
+        })
