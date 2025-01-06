@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 import discord
 import requests
 from scratchattach import ScratchCloud, CloudActivity
+from scratchattach.utils.exceptions import FetchError as SAFetchError
 
 from discordbot.scratch_info import get_scratch_info
 from discordbot.daily_projects import DailyProjects
@@ -71,6 +72,10 @@ class discordAuth:
 
         userdata = [user for user in self.waiting_users if user["discord_id"] == discord_id][-1]
         raw_logs: list[CloudActivity] = ScratchCloud(project_id=1071161378).logs()
+
+        if isinstance(raw_logs, SAFetchError):
+            return userdata["username"], "fetch_error"
+
         logs = [cloud_activity for cloud_activity in raw_logs if cloud_activity.type == "set" and cloud_activity.var == "AuthCode" and cloud_activity.username == userdata["username"]]
 
         if len(logs) == 0:
@@ -178,6 +183,9 @@ class csAuthOKView(discord.ui.View):
             color = 0xf6a408
         elif status == "not_found":
             description = "認証できませんでした。コードが入力されていない可能性があります。30秒後にもう一度入力し直してください。"
+            color = 0xf6a408
+        elif status == "fetch_error":
+            description = "認証できませんでした。Scratch側でクラウド変数のエラーが発生している可能性があります。時間をおいて再度試してみてください。"
             color = 0xf6a408
         else:
             description = "不明なエラーが発生しました。お問い合わせページでお問い合わせをお願いします。"
