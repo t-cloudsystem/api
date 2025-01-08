@@ -387,10 +387,11 @@ class csPublicBot:
             await message.reply(content="メッセージありがとうございます！こちらでのお問い合わせにはお答えできませんのでご了承ください。\n[お問い合わせチャンネル](https://discord.com/channels/1210843458932178994/1256881718766469131)のご利用をお願いします。")
             return
 
-        app_info = await self.bot.application_info()
-        data = get_scratch_info(message.content, app_info.icon.url)
-        if data:
-            await message.reply(embeds=[scratch_info.get_embed() for scratch_info in data], mention_author=False)
+        if "<embed_skip>" in message.content:
+            app_info = await self.bot.application_info()
+            data = get_scratch_info(message.content, app_info.icon.url)
+            if data:
+                await message.reply(embeds=[scratch_info.get_embed() for scratch_info in data], mention_author=False)
 
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         logger.debug(f"リアクション追加 {payload.emoji.name}")
