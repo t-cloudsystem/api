@@ -14,6 +14,7 @@ from scratchattach.utils.exceptions import FetchError as SAFetchError
 
 from discordbot.scratch_info import get_scratch_info
 from discordbot.daily_projects import DailyProjects
+from discordbot.embed_templates import EmbedTemplates
 
 
 load_dotenv(verbose=True)
@@ -232,12 +233,25 @@ class csPublicBot:
             from ..api.server_com import ConnectCS
             self.cs_server = ConnectCS()
 
+        if "DISCORD_CS_SERVERID" in os.environ:
+            self.discord_cs_server_id = int(os.environ.get("DISCORD_CS_SERVERID"))
+        else:
+            raise ValueError("環境変数が設定されていません")
+
         # runの後に定義しなければいけないものたち
         self.auth_view = None
         self.apply_view = None
         self.daily_projects = None
 
         self._register_decorator()
+
+        self.embed_outside = discord.Embed(title="エラー", description="このコマンドは公式サーバーでのみ利用可能です。", color=0xf6a408)
+
+    def _command_is_cs_admin(self, interaction: discord.Interaction):
+        return (interaction.guild is not None and
+                interaction.guild.id == self.discord_cs_server_id and
+                discord.utils.get(interaction.user.roles, name="admin")
+                )
 
     def _register_decorator(self):
         """クラスで定義されたコマンドを登録
@@ -249,28 +263,29 @@ class csPublicBot:
         self.on_raw_reaction_add = self.bot.event(self.on_raw_reaction_add)
 
         @self.tree.command(name="cs_auth", description="ユーザー認証のテンプレートを表示します。")
+        @self._command_limit(only_cloudserver=True)
         async def auth_command(interaction: discord.Interaction):
             embed = discord.Embed(title="ユーザー認証", description="下のボタンを押して、☁システムとの連携を始めましょう！", color=0x4459fe)
-            if discord.utils.get(interaction.user.roles, name="admin") is not None:
+            if self._command_is_cs_admin(interaction):
                 await interaction.channel.send(embed=embed, view=self.auth_view)
                 await interaction.response.send_message("↓送信が完了しました", ephemeral=True)
             else:
                 await interaction.response.send_message(embed=embed, view=self.auth_view, ephemeral=True)
 
         @self.tree.command(name="cs_apply", description="管理者応募のテンプレートを表示します。")
+        @self._command_limit(only_cloudserver=True)
         async def apply_command(interaction: discord.Interaction):
             embed = discord.Embed(title="管理者応募", description="下のボタンを押して、管理者への応募を始めましょう！", color=0x558aff)
-            if discord.utils.get(interaction.user.roles, name="admin") is not None:
+            if self._command_is_cs_admin(interaction):
                 await interaction.channel.send(embed=embed, view=self.apply_view)
                 await interaction.response.send_message("↓送信が完了しました", ephemeral=True)
             else:
                 await interaction.response.send_message(embed=embed, view=self.apply_view, ephemeral=True)
 
         @self.tree.command(name="admin_make_threads", description="スレッドを作成します。")
+        @self._command_limit(only_admin=True, only_cloudserver=True)
         async def make_threads(interaction: discord.Interaction):
-            # 送信したユーザーがadminロールを持っているか
-            if discord.utils.get(interaction.user.roles, name="admin") is None:
-                await interaction.response.send_message("実行権限がありません。", ephemeral=True)
+            """テスト用"""
 
             channel = self.bot.get_channel(1258771478959226980)
             thread = await channel.create_thread(name="応募内容2", reason="テスト")
@@ -279,14 +294,44 @@ class csPublicBot:
             await interaction.response.send_message(f"{link} こちらで会話してください", ephemeral=True)
 
         @self.tree.command(name="admin_decide_daily_project", description="手動で今日の作品を選出します。")
+        @self._command_limit(only_admin=True, only_cloudserver=True)
         async def decide_daily_project(interaction: discord.Interaction):
-            # 送信したユーザーがadminロールを持っているか
-            if discord.utils.get(interaction.user.roles, name="admin") is None:
-                await interaction.response.send_message("実行権限がありません。", ephemeral=True)
-
             await interaction.response.defer()
             await self.daily_projects.decide_daily_project()
             await interaction.followup.send("選出が完了しました", ephemeral=True)
+
+        @self.tree.command(name="scratch_fetch", description="Scratchのプロジェクト・ユーザー・スタジオの情報を取得して表示します。")
+        @discord.app_commands.describe(
+            text="ScratchのURLを含むテキスト",
+            ephemeral="非公開で作成するか (Trueで非公開)"
+        )
+        async def scratch_embed(interaction: discord.Interaction, text: str, ephemeral: bool = False):
+            await interaction.response.defer(ephemeral=ephemeral)
+
+            app_info = await self.bot.application_info()
+            data = get_scratch_info(text, app_info.icon.url)
+            if data:
+                await interaction.followup.send(embeds=[scratch_info.get_embed() for scratch_info in data])
+            else:
+                await interaction.followup.send(embed=EmbedTemplates.scratch_no_found)
+
+    def _command_limit(self, only_admin=False, only_cloudserver=False, allow_dm=True):
+        def decorator(f):
+            async def wrapper(interaction: discord.Interaction):
+                if only_admin and not self._command_is_cs_admin(interaction):
+                    await interaction.response.send_message(embed=EmbedTemplates.no_permission, ephemeral=True)
+                    return
+
+                if not allow_dm and interaction.guild is None:
+                    await interaction.response.send_message(embed=EmbedTemplates.dm, ephemeral=True)
+                    return
+
+                if only_cloudserver and interaction.guild is not None and interaction.guild.id != self.discord_cs_server_id:
+                    await interaction.response.send_message(embed=EmbedTemplates.outside_cs, ephemeral=True)
+                    return
+                return await f(interaction)
+            return wrapper
+        return decorator
 
     async def _delete_info(self, payload: discord.RawReactionActionEvent):
         """作成した情報の埋め込みを削除
@@ -323,7 +368,7 @@ class csPublicBot:
         self.bot.add_view(self.apply_view)
         self.daily_projects = DailyProjects(self.bot)
 
-        cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
+        cs_guild = self.bot.get_guild(self.discord_cs_server_id)
 
         channel = self.bot.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID")))
         if channel:

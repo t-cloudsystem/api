@@ -79,6 +79,7 @@ class DailyProjects(commands.Cog):
             applied_users.add(project.author)
 
         if not projects_id:
+            logger.info("選択できる作品がありませんでした")
             return
 
         logger.debug(f"選択肢: {[str(x) for x in projects_id]}")
