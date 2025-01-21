@@ -15,6 +15,7 @@ from scratchattach.utils.exceptions import FetchError as SAFetchError
 from discordbot.scratch_info import get_scratch_info
 from discordbot.daily_projects import DailyProjects
 from discordbot.templates import EmbedTemplates
+from discordbot.scratch_auth import ChooseMethodView, WaitingVerifyView, ScratchAuth
 
 
 load_dotenv(verbose=True)
