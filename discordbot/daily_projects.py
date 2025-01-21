@@ -37,6 +37,8 @@ class DailyProjects(commands.Cog):
         if not all([self.studio_id, self.api_url, self.api_pass, self.channel_id]):
             raise ValueError("環境変数を正しく設定してください。")
 
+        self.max_applies = 20
+
         self.run.start()
 
     def cog_unload(self):
@@ -46,7 +48,7 @@ class DailyProjects(commands.Cog):
     async def run(self):
         await self.decide_daily_project()
 
-    async def decide_daily_project(self):
+    async def decide_daily_project(self, mention: bool = True):
         studio: sa.Studio = sa.get_studio(self.studio_id)
         studio.update()
 
@@ -57,7 +59,7 @@ class DailyProjects(commands.Cog):
             return
 
         past_projects = set(int(data["id"]) for data in past_res.json()["data"])
-        applied_users = set()
+        applies = {}
 
         projects_id = []
         projects_weight = []
@@ -67,15 +69,20 @@ class DailyProjects(commands.Cog):
             if project.moderation_status == "notsafe":
                 continue
 
-            if project.id in past_projects:
+            if project.author not in applies:
+                applies[project.author] = 0
+
+            # 採用済みと合わせてカウント
+            if applies[project.author] > self.max_applies:
                 continue
 
-            if project.author in applied_users:
+            applies[project.author] += 1
+
+            if project.id in past_projects:
                 continue
 
             projects_id.append(project)
             projects_weight.append(1)
-            applied_users.add(project.author)
 
         if not projects_id:
             logger.info("選択できる作品がありませんでした")
@@ -87,7 +94,9 @@ class DailyProjects(commands.Cog):
         choiced_project = random.choices(projects_id, k=1, weights=projects_weight)[0]
         logger.info(f"選ばれた作品: {choiced_project.title}")
 
-        text = f"## 今日の作品\nhttps://scratch.mit.edu/projects/{choiced_project.id}\n|| <@&1324929451175313438> ||"
+        text = f"## 今日の作品\nhttps://scratch.mit.edu/projects/{choiced_project.id}/"
+        if mention:
+            text += "\n|| <@&1324929451175313438> ||"
         embed = ScratchInfo(type="projects", id=choiced_project.id).get_embed(can_delete=False)
 
         channel = self.bot.get_channel(int(self.channel_id))

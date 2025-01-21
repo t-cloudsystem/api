@@ -297,7 +297,7 @@ class csPublicBot:
         @self._command_limit(only_admin=True, only_cloudserver=True)
         async def decide_daily_project(interaction: discord.Interaction):
             await interaction.response.defer()
-            await self.daily_projects.decide_daily_project()
+            await self.daily_projects.decide_daily_project(mention=False)
             await interaction.followup.send("選出が完了しました", ephemeral=True)
 
         @self.tree.command(name="scratch_fetch", description="Scratchのプロジェクト・ユーザー・スタジオの情報を取得して表示します。")
