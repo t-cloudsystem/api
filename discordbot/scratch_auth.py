@@ -22,6 +22,13 @@ logger.propagate = False
 
 class ScratchAuth:
     def __init__(self):
+        """Scratch認証を行います。
+        環境変数に'SCRATCH_AUTH_PROJECT_ID'を設定してください。
+
+        Raises:
+            ValueError: 環境変数が適切に設定されていない場合
+        """
+
         self.auth_project_id = os.environ.get("SCRATCH_AUTH_PROJECT_ID")
 
         if not self.auth_project_id:
@@ -44,7 +51,6 @@ class ScratchAuth:
         bot.add_view(ChooseMethodView())
         bot.add_view(WaitingVerifyView())
 
-        self.emoji_templates = EmojiTemplates(bot)
         self.cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
 
     def get_tokens(self, method: Literal["cloud", "comment", "profile-comment"], discord_id: int, username: str = None) -> dict:
@@ -188,7 +194,9 @@ class ChooseMethodView(discord.ui.View):
 
             res = self.scratch_auth.get_tokens(method, interaction.user.id)
             view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
-            await interaction.response.send_message(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view, ephemeral=True)
+
+            await interaction.user.send(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view)
+            await interaction.response.send_message("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
 
 
 class UsernameModal(discord.ui.Modal):
@@ -200,7 +208,9 @@ class UsernameModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         res = self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
         view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
-        await interaction.response.send_message(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view, ephemeral=True)
+
+        await interaction.user.send(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view)
+        await interaction.response.send_message("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
 
 
 def waiting_embed(public_code: str) -> discord.Embed:
