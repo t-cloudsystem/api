@@ -54,7 +54,8 @@ class csAuthStartView(discord.ui.View):
 
     @discord.ui.button(label="はじめる", custom_id="startauth", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
-        await interaction.response.send_modal(ChooseMethodView(self.scratch_auth, EmojiTemplates(self.bot)))
+        await interaction.response.send_message(embed=discord.Embed(title="ユーザー認証", description="認証方法を選択してください！", color=0x4459fe),
+                                                view=ChooseMethodView(self.scratch_auth, EmojiTemplates(self.bot)), ephemeral=True)
 
 
 class csApplyStartView(discord.ui.View):

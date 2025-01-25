@@ -8,8 +8,8 @@ import discord
 from discord.ext import commands, tasks
 import requests
 
-# from discordbot.templates import EmojiTemplates
-from templates import EmojiTemplates  # テスト用
+from discordbot.templates import EmojiTemplates
+# from templates import EmojiTemplates  # テスト用
 
 
 logger = getLogger(__name__)
@@ -48,8 +48,8 @@ class ScratchAuth:
 
         self.bot = bot
 
-        bot.add_view(ChooseMethodView())
-        bot.add_view(WaitingVerifyView())
+        bot.add_view(ChooseMethodView(self, EmojiTemplates(bot)))
+        bot.add_view(WaitingVerifyView(self, 0))
 
         self.cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
 
@@ -174,7 +174,8 @@ class ChooseMethodView(discord.ui.View):
         self.scratch_auth = scratch_auth
         super().__init__(timeout=timeout)
 
-        self.select = discord.ui.Select(
+        @discord.ui.select(
+            cls=discord.ui.Select,
             custom_id="choose_auth_method",
             placeholder="ここから選択",
             options=[
@@ -183,7 +184,8 @@ class ChooseMethodView(discord.ui.View):
                 discord.SelectOption(label="プロフィールコメント", value="profile-comment", emoji=self.emoji_templates.auth_profile_comment, description="プロフィールにコメントしてください。"),
             ]
         )
-        self.add_item(self.select)
+        async def select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+            self.select = select
 
         @discord.ui.button(label="決定する", custom_id="get_token", style=discord.ButtonStyle.primary)
         async def get_token(interaction: discord.Interaction, button: discord.Button) -> None:
