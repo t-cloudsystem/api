@@ -1,8 +1,8 @@
-import time
 import os
 import base64
-from typing import Literal
+from typing import Literal, Optional
 from logging import getLogger, StreamHandler, DEBUG
+from dataclasses import dataclass
 
 import discord
 from discord.ext import commands, tasks
@@ -29,7 +29,8 @@ class ScratchAuth:
 
         self.auth_API = "https://auth-api.itinerary.eu.org"
         self.auth_redirect = "https://www.takechi.cloud/"
-        self.waitings = {}
+        self.waitings: dict[str, WaitingData] = {}
+        self.cs_guild: Optional[discord.Guild] = None
 
     def init_with_bot(self, bot: commands.Bot):
         """Botのインスタンスを利用した初期化
@@ -44,8 +45,9 @@ class ScratchAuth:
         bot.add_view(WaitingVerifyView())
 
         self.emoji_templates = EmojiTemplates(bot)
+        self.cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
 
-    def get_tokens(self, method: Literal["cloud", "comment", "profile-comment"], username: str = None):
+    def get_tokens(self, method: Literal["cloud", "comment", "profile-comment"], discord_id: int, username: str = None) -> dict:
         """認証用のトークンを取得します
 
         Args:
@@ -75,10 +77,16 @@ class ScratchAuth:
         if res.status_code != 200:
             raise ConnectionError(f"APIの取得に失敗しました コード: {res.status_code}")
 
-        task = VerifyTokenTask(self, res["privateCode"])
-        self.waitings[res["publicCode"]] = task
+        task = VerifyTokenTask(self, res["privateCode"], discord_id)
 
-        return res.json()
+        if discord_id in self.waitings.keys():
+            self.waitings[discord_id].task.schedule_handler.stop()
+
+        waiting = WaitingData(res["publicCode"], res["privateCode"], method, task)
+        self.waitings[discord_id] = waiting
+        # {"task": task, "publicCode": res["publicCode"], "privateCode": res["privateCode"], "method": method}
+
+        return waiting
 
     async def verify_token(self, private_code: str):
         """トークンを検証します
@@ -110,11 +118,15 @@ class ScratchAuth:
             logger.error("認証元が異なります")
             return False
 
-        cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
-        member = cs_guild.get_member(12345)  # ユーザーIDを引っ張ってくる必要あり
-        await member.add_roles(discord.utils.get(cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
+        discord_id, waiting_data = list({k: v for k, v in self.waitings.items() if v.private_code == private_code}.items())[0]
+        self.waitings.pop(discord_id)
 
-        await cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(
+        waiting_data.task.schedule_handler.stop()
+
+        member = self.cs_guild.get_member(discord_id)
+        await member.add_roles(discord.utils.get(self.cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
+
+        await self.cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(
             f"ユーザー認証が完了しました。臨時で記録しています。\nScratch: {res_json["username"]}\nDiscord: {member.id}"
             )
 
@@ -124,9 +136,10 @@ class ScratchAuth:
 
 
 class VerifyTokenTask(commands.Cog):
-    def __init__(self, scratch_auth: ScratchAuth, private_code: str) -> None:
+    def __init__(self, scratch_auth: ScratchAuth, private_code: str, discord_id: int) -> None:
         self.scratch_auth = scratch_auth
         self.private_code = private_code
+        self.discord_id = discord_id
         self.schedule_handler.start()
 
     def cog_unload(self):
@@ -136,7 +149,17 @@ class VerifyTokenTask(commands.Cog):
     async def schedule_handler(self):
         is_ok = await self.scratch_auth.verify_token(self.private_code)
         if is_ok:
+            embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
+            await self.scratch_auth.bot.get_user(self.discord_id).send(embed=embed)
             self.schedule_handler.stop()
+
+
+@dataclass
+class WaitingData:
+    public_code: str
+    private_code: str
+    method: Literal["cloud", "comment", "profile-comment"]
+    task: VerifyTokenTask
 
 
 class ChooseMethodView(discord.ui.View):
@@ -159,30 +182,54 @@ class ChooseMethodView(discord.ui.View):
         @discord.ui.button(label="決定する", custom_id="get_token", style=discord.ButtonStyle.primary)
         async def get_token(interaction: discord.Interaction, button: discord.Button) -> None:
             method = self.select.values[0]
-            tokens = self.scratch_auth.get_tokens(method)
+            if method == "profile-comment":
+                await interaction.response.send_modal(UsernameModal, ephemeral=True)
+                return
 
-            await interaction.response.send_message(f"認証コード: {tokens['code']}", ephemeral=True)
+            res = self.scratch_auth.get_tokens(method, interaction.user.id)
+            view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
+            await interaction.response.send_message(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view, ephemeral=True)
+
+
+class UsernameModal(discord.ui.Modal):
+    def __init__(self) -> None:
+        super().__init__(title="ユーザー認証")
+        self.username = discord.ui.TextInput(label="Scratchのユーザー名", style=discord.TextStyle.short, placeholder="scratchcat", min_length=3, max_length=20)
+        self.add_item(self.username)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        res = self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
+        view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
+        await interaction.response.send_message(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view, ephemeral=True)
+
+
+def waiting_embed(public_code: str) -> discord.Embed:
+    auth_project = int(os.environ.get("SCRATCH_AUTH_PROJECT_ID", "728098174"))
+    return discord.Embed(title="ユーザー認証", description=f"準備ができました！\n以下のコードを[入力用ページ](https://scratch.mit.edu/projects/{auth_project}/)で入力して、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```", color=0x4459fe)
 
 
 class WaitingVerifyView(discord.ui.View):
     """認証コードを表示しつつ、入力を待つView"""
 
-    def __init__(self, timeout=None):
+    def __init__(self, scratch_auth: ScratchAuth, discord_id: int, timeout=None):
         super().__init__(timeout=timeout)
+        self.scratch_auth = scratch_auth
+        self.discord_id = discord_id
 
-    @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.danger)
-    async def cancel(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("キャンセルしました。", ephemeral=True)
-        self.stop()
+    @discord.ui.button(label="入力しました", custom_id="verify_token", style=discord.ButtonStyle.primary)
+    async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
+        if self.discord_id not in self.scratch_auth.waitings.keys():
+            embed = discord.Embed(title="ユーザー認証", description="すでに認証が完了しているようです。", color=0xf6a408)
+            await interaction.response.send_message(embed=embed)
 
-    @discord.ui.button(label="再送信", style=discord.ButtonStyle.secondary)
-    async def resend(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("再送信しました。", ephemeral=True)
-
-    @discord.ui.button(label="認証", style=discord.ButtonStyle.primary)
-    async def verify(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message("認証しました。", ephemeral=True)
-        self.stop()
+        waiting = self.scratch_auth.waitings[self.discord_id]
+        res = self.scratch_auth.verify_token(waiting.private_code)
+        if res:
+            embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed = discord.Embed(title="ユーザー認証", description="認証に失敗しました。正しいコードを入力しているか確認してください。", color=0xf6a408)
+            await interaction.response.send_message(embed=embed)
 
 
 if __name__ == "__main__":
