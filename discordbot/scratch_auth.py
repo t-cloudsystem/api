@@ -1,3 +1,4 @@
+from __future__ import annotations  # 型アノテーション時の参照エラー回避
 import os
 import base64
 from typing import Literal, Optional
@@ -18,6 +19,33 @@ handler.setLevel(DEBUG)
 logger.setLevel(DEBUG)
 logger.addHandler(handler)
 logger.propagate = False
+
+
+class VerifyTokenTask(commands.Cog):
+    def __init__(self, scratch_auth: ScratchAuth, private_code: str, discord_id: int) -> None:
+        self.scratch_auth = scratch_auth
+        self.private_code = private_code
+        self.discord_id = discord_id
+        self.schedule_handler.start()
+
+    def cog_unload(self):
+        self.schedule_handler.cancel()
+
+    @tasks.loop(seconds=5.0)
+    async def schedule_handler(self):
+        is_ok = await self.scratch_auth.verify_token(self.private_code)
+        if is_ok:
+            embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
+            await self.scratch_auth.bot.get_user(self.discord_id).send(embed=embed)
+            self.schedule_handler.stop()
+
+
+@dataclass
+class WaitingData:
+    public_code: str
+    private_code: str
+    method: Literal["cloud", "comment", "profile-comment"]
+    task: VerifyTokenTask
 
 
 class ScratchAuth:
@@ -53,7 +81,7 @@ class ScratchAuth:
 
         self.cs_guild = self.bot.get_guild(int(os.environ.get("DISCORD_CS_SERVERID")))
 
-    def get_tokens(self, method: Literal["cloud", "comment", "profile-comment"], discord_id: int, username: str = None) -> dict:
+    def get_tokens(self, method: Literal["cloud", "comment", "profile-comment"], discord_id: int, username: str = None) -> WaitingData:
         """認証用のトークンを取得します
 
         Args:
@@ -77,20 +105,23 @@ class ScratchAuth:
         if method == "profile-comment":
             params["username"] = username
 
+        logger.debug(f"APIリクエスト: {params}")
         res = requests.get(f"{self.auth_API}/auth/getTokens/", params=params)
         # {'publicCode': 'abcabc', 'privateCode': 'abcabcabcabc', 'redirectLocation': 'https://www.takechi.cloud/', 'method': 'comment', 'authProject': '1071161378'}
+        logger.debug(f"APIレスポンス: {res.json()}")
 
         if res.status_code != 200:
             raise ConnectionError(f"APIの取得に失敗しました コード: {res.status_code}")
 
-        task = VerifyTokenTask(self, res["privateCode"], discord_id)
+        res_json = res.json()
+        task = VerifyTokenTask(self, res_json["privateCode"], discord_id)
 
         if discord_id in self.waitings.keys():
             self.waitings[discord_id].task.schedule_handler.stop()
 
-        waiting = WaitingData(res["publicCode"], res["privateCode"], method, task)
+        waiting = WaitingData(res_json["publicCode"], res_json["privateCode"], method, task)
         self.waitings[discord_id] = waiting
-        # {"task": task, "publicCode": res["publicCode"], "privateCode": res["privateCode"], "method": method}
+        # {"task": task, "publicCode": res_json["publicCode"], "privateCode": res_json["privateCode"], "method": method}
 
         return waiting
 
@@ -108,7 +139,8 @@ class ScratchAuth:
             Any: APIのレスポンス
         """
 
-        res = requests.post(f"{self.auth_API}/auth/verifyToken/", json={"privateCode": private_code})
+        res = requests.post(f"{self.auth_API}/auth/verifyToken/:privateCode", json={"privateCode": private_code})
+        logger.debug(f"APIレスポンス: {res.text}")
 
         if res.status_code != 200:
             raise ConnectionError(f"APIの取得に失敗しました コード: {res.status_code}")
@@ -141,41 +173,16 @@ class ScratchAuth:
         return True
 
 
-class VerifyTokenTask(commands.Cog):
-    def __init__(self, scratch_auth: ScratchAuth, private_code: str, discord_id: int) -> None:
-        self.scratch_auth = scratch_auth
-        self.private_code = private_code
-        self.discord_id = discord_id
-        self.schedule_handler.start()
-
-    def cog_unload(self):
-        self.schedule_handler.cancel()
-
-    @tasks.loop(seconds=5.0)
-    async def schedule_handler(self):
-        is_ok = await self.scratch_auth.verify_token(self.private_code)
-        if is_ok:
-            embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
-            await self.scratch_auth.bot.get_user(self.discord_id).send(embed=embed)
-            self.schedule_handler.stop()
-
-
-@dataclass
-class WaitingData:
-    public_code: str
-    private_code: str
-    method: Literal["cloud", "comment", "profile-comment"]
-    task: VerifyTokenTask
-
-
 class ChooseMethodView(discord.ui.View):
     def __init__(self, scratch_auth: ScratchAuth, emoji_templates: EmojiTemplates, timeout=None):
         self.emoji_templates = emoji_templates
         self.scratch_auth = scratch_auth
         super().__init__(timeout=timeout)
 
-        @discord.ui.select(
-            cls=discord.ui.Select,
+        self.set_select()
+
+    def set_select(self):
+        self.select = discord.ui.Select(
             custom_id="choose_auth_method",
             placeholder="ここから選択",
             options=[
@@ -184,21 +191,22 @@ class ChooseMethodView(discord.ui.View):
                 discord.SelectOption(label="プロフィールコメント", value="profile-comment", emoji=self.emoji_templates.auth_profile_comment, description="プロフィールにコメントしてください。"),
             ]
         )
-        async def select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
-            self.select = select
+        self.select.callback = self.get_token
+        self.add_item(self.select)
 
-        @discord.ui.button(label="決定する", custom_id="get_token", style=discord.ButtonStyle.primary)
-        async def get_token(interaction: discord.Interaction, button: discord.Button) -> None:
-            method = self.select.values[0]
-            if method == "profile-comment":
-                await interaction.response.send_modal(UsernameModal, ephemeral=True)
-                return
+    async def get_token(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
 
-            res = self.scratch_auth.get_tokens(method, interaction.user.id)
-            view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
+        method = self.select.values[0]
+        if method == "profile-comment":
+            await interaction.response.send_modal(UsernameModal, ephemeral=True)
+            return
 
-            await interaction.user.send(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view)
-            await interaction.response.send_message("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
+        waiting_data = self.scratch_auth.get_tokens(method, interaction.user.id)
+        view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
+
+        await interaction.user.send(f"認証コード: {waiting_data.public_code}", embed=waiting_embed(waiting_data.public_code), view=view)
+        await interaction.followup.send("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
 
 
 class UsernameModal(discord.ui.Modal):
@@ -208,11 +216,13 @@ class UsernameModal(discord.ui.Modal):
         self.add_item(self.username)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
         res = self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
         view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
 
         await interaction.user.send(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view)
-        await interaction.response.send_message("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
+        await interaction.followup.send("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
 
 
 def waiting_embed(public_code: str) -> discord.Embed:
@@ -228,6 +238,12 @@ class WaitingVerifyView(discord.ui.View):
         self.scratch_auth = scratch_auth
         self.discord_id = discord_id
 
+        self.add_item(discord.ui.Button(
+            label="入力用ページへ",
+            url=f'https://scratch.mit.edu/projects/{self.scratch_auth.auth_project_id}/',
+            style=discord.ButtonStyle.link
+        ))
+
     @discord.ui.button(label="入力しました", custom_id="verify_token", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
         if self.discord_id not in self.scratch_auth.waitings.keys():
@@ -235,7 +251,7 @@ class WaitingVerifyView(discord.ui.View):
             await interaction.response.send_message(embed=embed)
 
         waiting = self.scratch_auth.waitings[self.discord_id]
-        res = self.scratch_auth.verify_token(waiting.private_code)
+        res = await self.scratch_auth.verify_token(waiting.private_code)
         if res:
             embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
             await interaction.response.send_message(embed=embed)
