@@ -1,13 +1,12 @@
 from __future__ import annotations  # 型アノテーション時の参照エラー回避
 import os
 import base64
-import time
 from typing import Literal, Optional
 from logging import getLogger, StreamHandler, DEBUG
 from dataclasses import dataclass
 
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 import requests
 
 from discordbot.templates import EmojiTemplates
@@ -22,39 +21,11 @@ logger.addHandler(handler)
 logger.propagate = False
 
 
-class VerifyTokenTask(commands.Cog):
-    def __init__(self, scratch_auth: ScratchAuth, private_code: str, discord_id: int, *, timeout: int = 180) -> None:
-        self.scratch_auth = scratch_auth
-        self.private_code = private_code
-        self.discord_id = discord_id
-
-        self.start_time = time.time()
-        self.timeout = timeout
-
-        self.schedule_handler.start()
-
-    def cog_unload(self):
-        self.schedule_handler.cancel()
-
-    @tasks.loop(seconds=5.0)
-    async def schedule_handler(self):
-        is_ok = await self.scratch_auth.verify_token(self.private_code)
-        if is_ok:
-            embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
-            await self.scratch_auth.bot.get_user(self.discord_id).send(embed=embed)
-            self.schedule_handler.stop()
-
-        if time.time() - self.start_time > self.timeout:
-            logger.info("有効期限切れ")
-            self.schedule_handler.stop()
-
-
 @dataclass
 class WaitingData:
     public_code: str
     private_code: str
     method: Literal["cloud", "comment", "profile-comment"]
-    task: VerifyTokenTask
 
 
 class ScratchAuth:
@@ -123,12 +94,8 @@ class ScratchAuth:
             raise ConnectionError(f"APIの取得に失敗しました コード: {res.status_code}")
 
         res_json = res.json()
-        task = VerifyTokenTask(self, res_json["privateCode"], discord_id)
 
-        if discord_id in self.waitings.keys():
-            self.waitings[discord_id].task.schedule_handler.stop()
-
-        waiting = WaitingData(res_json["publicCode"], res_json["privateCode"], method, task)
+        waiting = WaitingData(public_code=res_json["publicCode"], private_code=res_json["privateCode"], method=method)
         self.waitings[discord_id] = waiting
         # {"task": task, "publicCode": res_json["publicCode"], "privateCode": res_json["privateCode"], "method": method}
 
@@ -170,7 +137,8 @@ class ScratchAuth:
         discord_id, waiting_data = list({k: v for k, v in self.waitings.items() if v.private_code == private_code}.items())[0]
         self.waitings.pop(discord_id)
 
-        waiting_data.task.schedule_handler.stop()
+        if not self.cs_guild:
+            raise RuntimeError("Botによる初期化がされていなかったため、ロールを付与できません")
 
         member = self.cs_guild.get_member(discord_id)
         await member.add_roles(discord.utils.get(self.cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
