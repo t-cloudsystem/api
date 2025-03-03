@@ -140,9 +140,9 @@ class ScratchAuth:
         """
 
         res = requests.post(f"{self.auth_API}/auth/verifyToken/:privateCode", json={"privateCode": private_code})
-        logger.debug(f"APIレスポンス: {res.text}")
+        logger.debug(f"APIレスポンス: {res.text}, コード: {res.status_code}, タイプ: {res.headers['content-type']}")
 
-        if res.status_code != 200:
+        if not res.headers["content-type"].lower().startswith("application/json"):
             raise ConnectionError(f"APIの取得に失敗しました コード: {res.status_code}")
 
         res_json = res.json()
@@ -195,13 +195,12 @@ class ChooseMethodView(discord.ui.View):
         self.add_item(self.select)
 
     async def get_token(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-
         method = self.select.values[0]
         if method == "profile-comment":
-            await interaction.response.send_modal(UsernameModal, ephemeral=True)
+            await interaction.response.send_modal(UsernameModal)
             return
 
+        await interaction.response.defer(ephemeral=True)
         waiting_data = self.scratch_auth.get_tokens(method, interaction.user.id)
         view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
 
@@ -218,10 +217,10 @@ class UsernameModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        res = self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
+        waiting_data = self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
         view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
 
-        await interaction.user.send(f"認証コード: {res['code']}", embed=waiting_embed(res["code"]), view=view)
+        await interaction.user.send(f"認証コード: {waiting_data.public_code}", embed=waiting_embed(waiting_data.public_code), view=view)
         await interaction.followup.send("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
 
 
