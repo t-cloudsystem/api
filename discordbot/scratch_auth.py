@@ -1,6 +1,7 @@
 from __future__ import annotations  # 型アノテーション時の参照エラー回避
 import os
 import base64
+import time
 from typing import Literal, Optional
 from logging import getLogger, StreamHandler, DEBUG
 from dataclasses import dataclass
@@ -22,10 +23,14 @@ logger.propagate = False
 
 
 class VerifyTokenTask(commands.Cog):
-    def __init__(self, scratch_auth: ScratchAuth, private_code: str, discord_id: int) -> None:
+    def __init__(self, scratch_auth: ScratchAuth, private_code: str, discord_id: int, *, timeout: int = 180) -> None:
         self.scratch_auth = scratch_auth
         self.private_code = private_code
         self.discord_id = discord_id
+
+        self.start_time = time.time()
+        self.timeout = timeout
+
         self.schedule_handler.start()
 
     def cog_unload(self):
@@ -39,6 +44,10 @@ class VerifyTokenTask(commands.Cog):
             await self.scratch_auth.bot.get_user(self.discord_id).send(embed=embed)
             self.schedule_handler.stop()
 
+        if time.time() - self.start_time > self.timeout:
+            logger.info("有効期限切れ")
+            self.schedule_handler.stop()
+
 
 @dataclass
 class WaitingData:
@@ -49,7 +58,7 @@ class WaitingData:
 
 
 class ScratchAuth:
-    def __init__(self):
+    def __init__(self, *, api: str = "https://auth-api.itinerary.eu.org", redirect: str = "https://www.takechi.cloud/"):
         """Scratch認証を行います。
         環境変数に'SCRATCH_AUTH_PROJECT_ID'を設定してください。
 
@@ -62,8 +71,8 @@ class ScratchAuth:
         if not self.auth_project_id:
             raise ValueError("Scratch認証用のプロジェクトを環境変数に指定してください。")
 
-        self.auth_API = "https://auth-api.itinerary.eu.org"
-        self.auth_redirect = "https://www.takechi.cloud/"
+        self.auth_API = api
+        self.auth_redirect = redirect
         self.waitings: dict[str, WaitingData] = {}
         self.cs_guild: Optional[discord.Guild] = None
 
@@ -139,9 +148,11 @@ class ScratchAuth:
             Any: APIのレスポンス
         """
 
-        res = requests.post(f"{self.auth_API}/auth/verifyToken/:privateCode", json={"privateCode": private_code})
+        logger.debug(f"プライベートコード: {private_code}")
+        res = requests.get(f"{self.auth_API}/auth/verifyToken/:privateCode", params={"privateCode": private_code})
         logger.debug(f"APIレスポンス: {res.text}, コード: {res.status_code}, タイプ: {res.headers['content-type']}")
 
+        # 失敗だと403になるが、JSONは取得できる
         if not res.headers["content-type"].lower().startswith("application/json"):
             raise ConnectionError(f"APIの取得に失敗しました コード: {res.status_code}")
 
@@ -197,20 +208,23 @@ class ChooseMethodView(discord.ui.View):
     async def get_token(self, interaction: discord.Interaction) -> None:
         method = self.select.values[0]
         if method == "profile-comment":
-            await interaction.response.send_modal(UsernameModal)
+            await interaction.response.send_modal(UsernameModal(self.scratch_auth))
             return
 
         await interaction.response.defer(ephemeral=True)
+
         waiting_data = self.scratch_auth.get_tokens(method, interaction.user.id)
         view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
 
         await interaction.user.send(f"認証コード: {waiting_data.public_code}", embed=waiting_embed(waiting_data.public_code), view=view)
-        await interaction.followup.send("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
+        await interaction.followup.send("DMに認証コードを送信しました。ご確認ください！", ephemeral=True)
 
 
 class UsernameModal(discord.ui.Modal):
-    def __init__(self) -> None:
+    def __init__(self, scratch_auth: ScratchAuth) -> None:
         super().__init__(title="ユーザー認証")
+
+        self.scratch_auth = scratch_auth
         self.username = discord.ui.TextInput(label="Scratchのユーザー名", style=discord.TextStyle.short, placeholder="scratchcat", min_length=3, max_length=20)
         self.add_item(self.username)
 
@@ -221,12 +235,16 @@ class UsernameModal(discord.ui.Modal):
         view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
 
         await interaction.user.send(f"認証コード: {waiting_data.public_code}", embed=waiting_embed(waiting_data.public_code), view=view)
-        await interaction.followup.send("DMに認証コードを送信したので、ご確認ください！", ephemeral=True)
+        await interaction.followup.send("DMに認証コードを送信しました。ご確認ください！", ephemeral=True)
 
 
 def waiting_embed(public_code: str) -> discord.Embed:
     auth_project = int(os.environ.get("SCRATCH_AUTH_PROJECT_ID", "728098174"))
-    return discord.Embed(title="ユーザー認証", description=f"準備ができました！\n以下のコードを[入力用ページ](https://scratch.mit.edu/projects/{auth_project}/)で入力して、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```", color=0x4459fe)
+    return discord.Embed(
+        title="ユーザー認証",
+        description=f"準備ができました！\n以下のコードを**3分以内に**[入力用ページ](https://scratch.mit.edu/projects/{auth_project}/)で入力して、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```",
+        color=0x4459fe
+    )
 
 
 class WaitingVerifyView(discord.ui.View):
@@ -246,8 +264,9 @@ class WaitingVerifyView(discord.ui.View):
     @discord.ui.button(label="入力しました", custom_id="verify_token", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
         if self.discord_id not in self.scratch_auth.waitings.keys():
-            embed = discord.Embed(title="ユーザー認証", description="すでに認証が完了しているようです。", color=0xf6a408)
+            embed = discord.Embed(title="ユーザー認証", description="認証の有効期限が切れました。お手数ですが、最初からやり直してください。", color=0xf6a408)
             await interaction.response.send_message(embed=embed)
+            return
 
         waiting = self.scratch_auth.waitings[self.discord_id]
         res = await self.scratch_auth.verify_token(waiting.private_code)
@@ -266,6 +285,6 @@ if __name__ == "__main__":
     dotenv_path = path.join(path.abspath(path.join(path.dirname(__file__), os.pardir)), '.env')
     load_dotenv(dotenv_path)
 
-    scratchauth = ScratchAuth()
+    scratch_auth = ScratchAuth()
 
-    print(scratchauth.get_tokens("comment"))
+    print(scratch_auth.get_tokens("comment"))
