@@ -150,7 +150,7 @@ class ScratchAuth:
         await member.add_roles(discord.utils.get(self.cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
 
         await self.cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(
-            f"ユーザー認証が完了しました。臨時で記録しています。\nScratch: {res_json["username"]}\nDiscord: {member.id}"
+            f'ユーザー認証が完了しました。臨時で記録しています。\nScratch: {res_json["username"]}\nDiscord: {member.id}'
             )
 
         logger.info(f"ユーザー認証完了 Scratch: {res_json["username"]} Discord: {member.id}")
