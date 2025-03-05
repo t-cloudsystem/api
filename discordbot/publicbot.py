@@ -10,7 +10,7 @@ import discord
 from discordbot.scratch_info import get_scratch_info
 from discordbot.daily_projects import DailyProjects
 from discordbot.templates import EmbedTemplates, EmojiTemplates
-from discordbot.scratch_auth import ChooseMethodView, WaitingVerifyView, ScratchAuth
+from discordbot.scratch_auth import ChooseMethodView, ScratchAuth
 
 
 load_dotenv(verbose=True)
@@ -54,8 +54,12 @@ class csAuthStartView(discord.ui.View):
 
     @discord.ui.button(label="はじめる", custom_id="startauth", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
-        await interaction.response.send_message(embed=discord.Embed(title="ユーザー認証", description="認証方法を選択してください！", color=0x4459fe),
-                                                view=ChooseMethodView(self.scratch_auth, EmojiTemplates(self.bot)), ephemeral=True)
+        if discord.utils.get(interaction.user.roles, name="CSuser") is not None:
+            embed = discord.Embed(title="ユーザー認証", description="あなたはすでに認証が完了しているようです。", color=0x43b581)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=discord.Embed(title="ユーザー認証", description="認証方法を選択してください！", color=0x4459fe),
+                                                    view=ChooseMethodView(self.scratch_auth, EmojiTemplates(self.bot)), ephemeral=True)
 
 
 class csApplyStartView(discord.ui.View):
@@ -127,7 +131,7 @@ class csPublicBot:
         self.on_raw_reaction_add = self.bot.event(self.on_raw_reaction_add)
 
         @self.tree.command(name="cs_auth", description="ユーザー認証のテンプレートを表示します。")
-        @self._command_limit(only_cloudserver=True, only_admin=True)  # テスト用
+        @self._command_limit(only_cloudserver=True)
         async def auth_command(interaction: discord.Interaction):
             embed = discord.Embed(title="ユーザー認証", description="下のボタンを押して、☁システムとの連携を始めましょう！", color=0x4459fe)
             if self._command_is_cs_admin(interaction):
