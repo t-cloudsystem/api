@@ -116,7 +116,7 @@ class ScratchAuth:
         """
 
         logger.debug(f"プライベートコード: {private_code}")
-        res = requests.get(f"{self.auth_API}/auth/verifyToken/:privateCode", params={"privateCode": private_code})
+        res = requests.get(f"{self.auth_API}/auth/verifyToken/{private_code}")
         logger.debug(f"APIレスポンス: {res.text}, コード: {res.status_code}, タイプ: {res.headers['content-type']}")
 
         # 失敗だと403になるが、JSONは取得できる
