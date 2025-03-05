@@ -1,20 +1,16 @@
 import datetime
 import random
-import time
 import os
-import hashlib
 from logging import getLogger, StreamHandler, DEBUG
 
 from dotenv import load_dotenv
 from discord.ext import commands, tasks
 import discord
-import requests
-from scratchattach import ScratchCloud, CloudActivity
-from scratchattach.utils.exceptions import FetchError as SAFetchError
 
 from discordbot.scratch_info import get_scratch_info
 from discordbot.daily_projects import DailyProjects
-from discordbot.embed_templates import EmbedTemplates
+from discordbot.templates import EmbedTemplates, EmojiTemplates
+from discordbot.scratch_auth import ChooseMethodView, ScratchAuth
 
 
 load_dotenv(verbose=True)
@@ -27,8 +23,6 @@ handler.setLevel(DEBUG)
 logger.setLevel(DEBUG)
 logger.addHandler(handler)
 logger.propagate = False
-
-cs_guild = None
 
 intents = discord.Intents.default()
 intents.members = True
@@ -52,148 +46,20 @@ class RandomStatusTask(commands.Cog):
             logger.error(f"ステータス変更中にエラーが発生しました {e}")
 
 
-class discordAuth:
-    hash_template = "{username}__{discord_id}__{time}"
-
-    def __init__(self, project_id: str) -> None:
-        self.waiting_users = []
-        self.project_id = str(project_id)
-
-    async def issue_authcode(self, username, discord_id):
-        timestamp = int(time.time())
-        self.waiting_users.append({"username": username, "discord_id": discord_id, "status": "waiting", "start_time": timestamp})
-        authcode = await self._make_authcode(username, discord_id, timestamp)
-        logger.info(f"認証コード発行 DiscordID {discord_id} コード {authcode}")
-        return authcode
-
-    async def check_authcode(self, discord_id):
-        discord_ids = [user["discord_id"] for user in self.waiting_users if user["status"] == "waiting"]
-        if discord_id not in discord_ids:
-            return "", "not_found"
-
-        userdata = [user for user in self.waiting_users if user["discord_id"] == discord_id][-1]
-        raw_logs: list[CloudActivity] = ScratchCloud(project_id=1071161378).logs()
-
-        if isinstance(raw_logs, SAFetchError):
-            return userdata["username"], "fetch_error"
-
-        logs = [cloud_activity for cloud_activity in raw_logs if cloud_activity.type == "set" and cloud_activity.var == "AuthCode" and cloud_activity.username == userdata["username"]]
-
-        if len(logs) == 0:
-            return userdata["username"], "not_found"
-
-        log = logs[0]
-        logger.debug(f"参照したクラウドログ {log.value}")
-
-        if max(time.time(), log.timestamp / 1000) > userdata["start_time"] + 300 or log.timestamp / 1000 < userdata["start_time"]:
-            return userdata["username"], "timeout"
-
-        if str(log.value) == str(await self._make_authcode(userdata["username"], discord_id, userdata["start_time"])):
-            # Scratchのユーザー名とDiscordのユーザーIDを紐づける
-            userdata["status"] = "completed"
-            return userdata["username"], "completed"
-        else:
-            return userdata["username"], "wrong_authcode"
-
-    async def is_registered(self, username):
-        data = requests.get(f"https://api.scratch.mit.edu/users/{username}").json()
-        if "code" in data:
-            return False
-
-        # ユーザーが登録されているかをCSサーバーに問い合わせる
-        return True
-
-    async def _make_authcode(self, username, discord_id, time):
-        hash_object = hashlib.md5(self.hash_template.format(username=username, discord_id=discord_id, time=time).encode())
-        return int(hash_object.hexdigest(), 16)
-
-
-class csAuthSettingModal(discord.ui.Modal):
-    def __init__(self, discord_auth=None, auth_project_id="0") -> None:
-        super().__init__(title="ユーザー認証")
-        self.username = discord.ui.TextInput(label="Scratchのユーザー名", style=discord.TextStyle.short, placeholder="scratchcat", min_length=3, max_length=20)
-        self.add_item(self.username)
-
-        if discord_auth:
-            self.discord_auth = discord_auth
-        else:
-            self.discord_auth = discordAuth(auth_project_id)
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message("DMに内容を送信したので、ご確認ください！", ephemeral=True)
-
-        if discord.utils.get(interaction.user.roles, name="CSuser") is not None:
-            embed = discord.Embed(title="ユーザー認証", description="あなたはすでに認証が完了しているようです。", color=0x43b581)
-            await interaction.user.send(embed=embed)
-            return
-
-        is_registered = await self.discord_auth.is_registered(self.username.value)
-        if is_registered:
-            authcode = await self.discord_auth.issue_authcode(self.username.value, interaction.user.id)
-            scratch_URL = f"https://scratch.mit.edu/projects/{os.environ.get('SCRATCH_AUTH_PROJECT_ID')}/"
-            embed = discord.Embed(title="ユーザー認証", description=f"ユーザー名が確認できました！\n5分以内に以下のコードを[入力用ページ]({scratch_URL})で入力して、下の「入力しました」ボタンを押してください。\n```\n{authcode}\n```", color=0x4459fe)
-            view = csAuthOKView(discord_auth=self.discord_auth)
-            view.add_item(discord.ui.Button(label="入力用ページ", url=scratch_URL, style=discord.ButtonStyle.link))
-            await interaction.user.send(content=str(authcode), embed=embed, view=view)
-        else:
-            embed = discord.Embed(title="ユーザー認証", description="あなたはクラウドシステムに登録されていないようです。もう一度入力してください。", color=0xf04747)
-            await interaction.user.send(embed=embed)
-
-
 class csAuthStartView(discord.ui.View):
-    def __init__(self, timeout=None):
+    def __init__(self, scratch_auth: ScratchAuth, bot: commands.Bot, timeout=None):
+        self.scratch_auth = scratch_auth
+        self.bot = bot
         super().__init__(timeout=timeout)
 
     @discord.ui.button(label="はじめる", custom_id="startauth", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
-        await interaction.response.send_modal(csAuthSettingModal(auth_project_id=os.environ.get("SCRATCH_AUTH_PROJECT_ID")))
-
-
-class csAuthOKView(discord.ui.View):
-    def __init__(self, timeout=None, auth_project_id="0", discord_auth=None):
-        super().__init__(timeout=timeout)
-        self.auth_project_id = auth_project_id
-
-        if discord_auth:
-            self.discord_auth = discord_auth
-            self.auth_project_id = self.discord_auth.project_id
+        if discord.utils.get(interaction.user.roles, name="CSuser") is not None:
+            embed = discord.Embed(title="ユーザー認証", description="あなたはすでに認証が完了しているようです。", color=0x43b581)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
-            self.discord_auth = discordAuth(auth_project_id)
-            self.auth_project_id = auth_project_id
-
-    @discord.ui.button(label="入力しました", custom_id="checkauth", style=discord.ButtonStyle.primary)
-    async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
-        global cs_guild
-
-        scratch_username, status = await self.discord_auth.check_authcode(interaction.user.id)
-        if status == "completed":
-            description = "認証が完了しました！"
-            color = 0x43b581
-
-            member = cs_guild.get_member(interaction.user.id)
-            await member.add_roles(discord.utils.get(cs_guild.roles, name="CSuser"), reason="ユーザー認証による自動付与")
-
-            await cs_guild.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID"))).send(f"ユーザー認証が完了しました。臨時で記録しています。\nScratch: {scratch_username}\nDiscord: {member.id}")
-
-            logger.info(f"ユーザー認証完了 Scratch: {scratch_username} Discord: {member.id}")
-        elif status == "timeout":
-            description = "認証コードの期限が切れました。もう一度初めからやり直してください。"
-            color = 0xf6a408
-        elif status == "wrong_authcode":
-            description = "認証できませんでした。コードが間違っている可能性があります。もう一度ページに入力してください。"
-            color = 0xf6a408
-        elif status == "not_found":
-            description = "認証できませんでした。コードが入力されていない可能性があります。30秒後にもう一度入力し直してください。"
-            color = 0xf6a408
-        elif status == "fetch_error":
-            description = "認証できませんでした。Scratch側でクラウド変数のエラーが発生している可能性があります。時間をおいて再度試してみてください。"
-            color = 0xf6a408
-        else:
-            description = "不明なエラーが発生しました。お問い合わせページでお問い合わせをお願いします。"
-            color = 0xf04747
-            logger.error(f"不明なエラー {status}")
-        embed = discord.Embed(title="ユーザー認証", description=description, color=color)
-        await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=discord.Embed(title="ユーザー認証", description="認証方法を選択してください！", color=0x4459fe),
+                                                    view=ChooseMethodView(self.scratch_auth, EmojiTemplates(self.bot)), ephemeral=True)
 
 
 class csApplyStartView(discord.ui.View):
@@ -237,6 +103,8 @@ class csPublicBot:
             self.discord_cs_server_id = int(os.environ.get("DISCORD_CS_SERVERID"))
         else:
             raise ValueError("環境変数が設定されていません")
+
+        self.scratch_auth = ScratchAuth()
 
         # runの後に定義しなければいけないものたち
         self.auth_view = None
@@ -358,17 +226,15 @@ class csPublicBot:
             logger.info(f"埋め込みを削除しました {message.id}")
 
     async def on_ready(self):
-        global cs_guild
-
         await self.tree.sync()
 
-        self.auth_view = csAuthStartView()
+        self.auth_view = csAuthStartView(self.scratch_auth, self.bot)
         self.apply_view = csApplyStartView(self.cs_server)
         self.bot.add_view(self.auth_view)
         self.bot.add_view(self.apply_view)
         self.daily_projects = DailyProjects(self.bot)
 
-        cs_guild = self.bot.get_guild(self.discord_cs_server_id)
+        self.scratch_auth.init_with_bot(self.bot)
 
         channel = self.bot.get_channel(int(os.environ.get("DISCORD_CS_CHANNELID")))
         if channel:
