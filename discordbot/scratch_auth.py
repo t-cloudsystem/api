@@ -26,6 +26,7 @@ class WaitingData:
     public_code: str
     private_code: str
     method: Literal["cloud", "comment", "profile-comment"]
+    username: Optional[str] = None
 
 
 class ScratchAuth:
@@ -46,6 +47,8 @@ class ScratchAuth:
         self.auth_redirect = redirect
         self.waitings: dict[str, WaitingData] = {}
         self.cs_guild: Optional[discord.Guild] = None
+
+        self.error_embed = discord.Embed(title="ユーザー認証", description="エラーが発生しました。\nお手数ですが、最初から認証をやり直してください。", color=0xb3b3b3)
 
     def init_with_bot(self, bot: commands.Bot):
         """Botのインスタンスを利用した初期化
@@ -96,8 +99,10 @@ class ScratchAuth:
         res_json = res.json()
 
         waiting = WaitingData(public_code=res_json["publicCode"], private_code=res_json["privateCode"], method=method)
+        if method == "profile-comment":
+            waiting.username = username
+
         self.waitings[discord_id] = waiting
-        # {"task": task, "publicCode": res_json["publicCode"], "privateCode": res_json["privateCode"], "method": method}
 
         return waiting
 
@@ -114,6 +119,10 @@ class ScratchAuth:
         Returns:
             Any: APIのレスポンス
         """
+
+        # ScratchAuthも1回で待機リストから消されるためここで削除
+        discord_id = list({k: v for k, v in self.waitings.items() if v.private_code == private_code}.items())[0][0]
+        self.waitings.pop(discord_id)
 
         logger.debug(f"プライベートコード: {private_code}")
         res = requests.get(f"{self.auth_API}/auth/verifyToken/{private_code}")
@@ -134,9 +143,6 @@ class ScratchAuth:
             logger.error("認証元が異なります")
             return False
 
-        discord_id, waiting_data = list({k: v for k, v in self.waitings.items() if v.private_code == private_code}.items())[0]
-        self.waitings.pop(discord_id)
-
         if not self.cs_guild:
             raise RuntimeError("Botによる初期化がされていなかったため、ロールを付与できません")
 
@@ -150,6 +156,43 @@ class ScratchAuth:
         logger.info(f"ユーザー認証完了 Scratch: {res_json["username"]} Discord: {member.id}")
 
         return True
+
+    def waiting_embed(self, discord_id: int) -> tuple[discord.Embed, Optional[discord.ui.View], Optional[str]]:
+        """認証用の埋め込みを作成
+
+        Args:
+            discord_id (int): 認証する人のDiscordID
+
+        Returns:
+            discord.Embed: Discordに送信する用の埋め込み
+        """
+
+        if discord_id not in self.waitings.keys():
+            logger.error(f"認証データが見つかりません DiscordID: {discord_id}")
+            return self.error_embed, None, None
+
+        embed = discord.Embed(title="ユーザー認証", color=0x4459fe)
+        view = None
+
+        method = self.waitings[discord_id].method
+        public_code = self.waitings[discord_id].public_code
+
+        if method == "profile-comment":
+            username = self.waitings[discord_id].username
+            if not username:
+                logger.error(f"ユーザー名が見つかりません DiscordID: {discord_id}")
+                return self.error_embed, None, None
+
+            embed.description = f"準備ができました！以下のコードを自分のプロフィールにコメントして、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```"
+            view = WaitingVerifyView(self, discord_id, f"https://scratch.mit.edu/users/{username}/#comments")
+        else:
+            if method == "cloud":
+                embed.description = f"準備ができました！\n以下のコードを[入力用ページ](https://scratch.mit.edu/projects/{self.auth_project_id}/)で入力して、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```"
+            else:
+                embed.description = f"準備ができました！\n以下のコードを[入力用ページ](https://scratch.mit.edu/projects/{self.auth_project_id}/)でコメントして、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```"
+            view = WaitingVerifyView(self, discord_id, f"https://scratch.mit.edu/projects/{self.auth_project_id}/")
+
+        return embed, view, public_code
 
 
 class ChooseMethodView(discord.ui.View):
@@ -181,11 +224,13 @@ class ChooseMethodView(discord.ui.View):
 
         await interaction.response.defer(ephemeral=True)
 
-        waiting_data = self.scratch_auth.get_tokens(method, interaction.user.id)
-        view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
-
-        await interaction.user.send(f"認証コード: {waiting_data.public_code}", embed=waiting_embed(waiting_data.public_code), view=view)
-        await interaction.followup.send("DMに認証コードを送信しました。ご確認ください！", ephemeral=True)
+        self.scratch_auth.get_tokens(method, interaction.user.id)
+        embed, view, public_code = self.scratch_auth.waiting_embed(interaction.user.id)
+        if view and public_code:
+            await interaction.user.send(f"認証コード: {public_code}", embed=embed, view=view)
+            await interaction.followup.send("DMに認証コードを送信しました。ご確認ください！", ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 class UsernameModal(discord.ui.Modal):
@@ -199,39 +244,30 @@ class UsernameModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        waiting_data = self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
-        view = WaitingVerifyView(self.scratch_auth, interaction.user.id)
-
-        await interaction.user.send(f"認証コード: {waiting_data.public_code}", embed=waiting_embed(waiting_data.public_code), view=view)
-        await interaction.followup.send("DMに認証コードを送信しました。ご確認ください！", ephemeral=True)
-
-
-def waiting_embed(public_code: str) -> discord.Embed:
-    auth_project = int(os.environ.get("SCRATCH_AUTH_PROJECT_ID", "728098174"))
-    return discord.Embed(
-        title="ユーザー認証",
-        description=f"準備ができました！\n以下のコードを**3分以内に**[入力用ページ](https://scratch.mit.edu/projects/{auth_project}/)で入力して、下の「入力しました」ボタンを押してください。\n```\n{public_code}\n```",
-        color=0x4459fe
-    )
+        self.scratch_auth.get_tokens("profile-comment", interaction.user.id, self.username.value)
+        embed, view, public_code = self.scratch_auth.waiting_embed(interaction.user.id)
+        if view and public_code:
+            await interaction.user.send(f"認証コード: {public_code}", embed=embed, view=view)
+            await interaction.followup.send("DMに認証コードを送信しました。ご確認ください！", ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 class WaitingVerifyView(discord.ui.View):
     """認証コードを表示しつつ、入力を待つView"""
 
-    def __init__(self, scratch_auth: ScratchAuth, discord_id: int, timeout=None):
+    def __init__(self, scratch_auth: ScratchAuth, discord_id: int, link_url: Optional[str] = None, timeout: Optional[int] = None):
         super().__init__(timeout=timeout)
         self.scratch_auth = scratch_auth
         self.discord_id = discord_id
 
-        self.add_item(discord.ui.Button(
-            label="入力用ページへ",
-            url=f'https://scratch.mit.edu/projects/{self.scratch_auth.auth_project_id}/',
-            style=discord.ButtonStyle.link
-        ))
+        if link_url:
+            self.add_item(discord.ui.Button(label="入力用ページへ", url=link_url, style=discord.ButtonStyle.link))
 
     @discord.ui.button(label="入力しました", custom_id="verify_token", style=discord.ButtonStyle.primary)
     async def start(self, interaction: discord.Interaction, button: discord.Button) -> None:
         if self.discord_id not in self.scratch_auth.waitings.keys():
+            logger.info(f"認証データなし DiscordID: {self.discord_id}")
             embed = discord.Embed(title="ユーザー認証", description="認証の有効期限が切れました。お手数ですが、最初からやり直してください。", color=0xf6a408)
             await interaction.response.send_message(embed=embed)
             return
@@ -244,7 +280,11 @@ class WaitingVerifyView(discord.ui.View):
             embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
             await interaction.followup.send(embed=embed)
         else:
-            embed = discord.Embed(title="ユーザー認証", description="認証に失敗しました。正しいコードを入力しているか確認してください。", color=0xf6a408)
+            embed = discord.Embed(
+                title="ユーザー認証",
+                description="認証に失敗しました。お手数ですが、最初からやり直してください。\n何回やっても失敗する場合は、管理者にお問い合わせください。",
+                color=0xf6a408
+            )
             await interaction.followup.send(embed=embed)
 
 
