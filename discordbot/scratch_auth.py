@@ -153,7 +153,7 @@ class ScratchAuth:
             f'ユーザー認証が完了しました。臨時で記録しています。\nScratch: {res_json["username"]}\nDiscord: {member.id}'
             )
 
-        logger.info(f"ユーザー認証完了 Scratch: {res_json["username"]} Discord: {member.id}")
+        logger.info(f'ユーザー認証完了 Scratch: {res_json["username"]} Discord: {member.id}')
 
         return True
 
