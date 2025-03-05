@@ -236,14 +236,16 @@ class WaitingVerifyView(discord.ui.View):
             await interaction.response.send_message(embed=embed)
             return
 
+        await interaction.response.defer()
+
         waiting = self.scratch_auth.waitings[self.discord_id]
         res = await self.scratch_auth.verify_token(waiting.private_code)
         if res:
             embed = discord.Embed(title="ユーザー認証", description="認証が完了しました！", color=0x43b581)
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed)
         else:
             embed = discord.Embed(title="ユーザー認証", description="認証に失敗しました。正しいコードを入力しているか確認してください。", color=0xf6a408)
-            await interaction.response.send_message(embed=embed)
+            await interaction.followup.send(embed=embed)
 
 
 if __name__ == "__main__":
