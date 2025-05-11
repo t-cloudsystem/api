@@ -28,7 +28,7 @@ start_times = [
 
 class DailyProjects(commands.Cog):
     def __init__(self, bot):
-        self.bot: commands.bot = bot
+        self.bot: commands.Bot = bot
         self.studio_id = os.environ.get("SCRATCH_DAILY_PROJECTS_STUDIO_ID")
         self.api_url = os.environ.get("SCRATCH_DAILY_HISTORY_API_URL")
         self.api_pass = os.environ.get("SCRATCH_DAILY_HISTORY_API_PASS")
@@ -85,7 +85,10 @@ class DailyProjects(commands.Cog):
             projects_weight.append(1)
 
         if not projects_id:
-            logger.info("選択できる作品がありませんでした")
+            logger.info("対象作品なし")
+            channel = self.bot.get_channel(int(self.channel_id))
+            text = f"選択できる作品がありませんでした。\n[エントリースタジオ](https://scratch.mit.edu/studios/{self.studio_id}/)で作品を追加しましょう！"
+            message = await channel.send(text)
             return
 
         logger.debug(f"選択肢: {[str(x) for x in projects_id]}")
