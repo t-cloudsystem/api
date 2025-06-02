@@ -2,6 +2,7 @@ import os
 import datetime
 from logging import getLogger, StreamHandler, DEBUG
 import random
+import time
 
 from discord.ext import commands, tasks
 import requests
@@ -86,9 +87,15 @@ class DailyProjects(commands.Cog):
 
         if not projects_id:
             logger.info("対象作品なし")
+            last_sent = max(int(data["timestamp"]) for data in past_res.json()["data"])
+            if time.time() - last_sent > 24 * 60 * 60 + 300:
+                logger.info("繰り返しのメッセージはなし")
+                return
+
             channel = self.bot.get_channel(int(self.channel_id))
             text = f"選択できる作品がありませんでした。\n[エントリースタジオ](https://scratch.mit.edu/studios/{self.studio_id}/)で作品を追加しましょう！"
             message = await channel.send(text)
+            logger.info(f"メッセージ送信完了: {message.id}")
             return
 
         logger.debug(f"選択肢: {[str(x) for x in projects_id]}")
