@@ -7,6 +7,7 @@ class EmbedTemplates:
     no_permission = Embed(title="エラー", description="このコマンドを実行する権限がありません。", color=0xf6a408)
     dm = Embed(title="エラー", description="このコマンドはDMでは実行できません。", color=0xf6a408)
     scratch_no_found = Embed(title="エラー", description="テキストからScratchのURLを見つけられませんでした。", color=0xf6a408)
+    not_bot_message = Embed(title="エラー", description="このメッセージはBotのメッセージではありません。", color=0xf6a408)
 
 
 class EmojiTemplates:

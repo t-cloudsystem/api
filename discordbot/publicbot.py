@@ -11,7 +11,7 @@ from discordbot.scratch_info import get_scratch_info
 from discordbot.daily_projects import DailyProjects
 from discordbot.templates import EmbedTemplates, EmojiTemplates
 from discordbot.scratch_auth import ChooseMethodView, ScratchAuth
-
+from discordbot.admin_messages import AdminMessages
 
 load_dotenv(verbose=True)
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -111,6 +111,7 @@ class csPublicBot:
         self.apply_view = None
         self.daily_projects = None
 
+        self.tree.add_command(AdminMessages(self.bot, self.discord_cs_server_id))
         self._register_decorator()
 
         self.embed_outside = discord.Embed(title="エラー", description="このコマンドは公式サーバーでのみ利用可能です。", color=0xf6a408)
