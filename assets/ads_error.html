@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{status_code} | たーけクラウドシステム</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Noto Sans JP", sans-serif;
+        background: linear-gradient(135deg, #d9e4ff 0%, #d9ddff 100%);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: #333;
+        line-height: 1.6;
+      }
+
+      .container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        padding: 3rem 2.5rem;
+        text-align: center;
+        max-width: 500px;
+        width: 90%;
+        margin: 20px;
+      }
+
+      .logo {
+        width: auto;
+        height: 60px;
+        margin-bottom: 2rem;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+      }
+
+      .error-code {
+        font-size: 4rem;
+        font-weight: bold;
+        color: #5686ff;
+        margin-bottom: 1rem;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      h1 {
+        font-size: 1.8rem;
+        color: #444;
+        margin-bottom: 1rem;
+        font-weight: 600;
+      }
+
+      .message {
+        font-size: 1.1rem;
+        color: #666;
+        margin-bottom: 2rem;
+        line-height: 1.8;
+      }
+
+      .back-button {
+        display: inline-block;
+        background: linear-gradient(135deg, #5a77be, #5c5abe);
+        color: white;
+        padding: 12px 30px;
+        border-radius: 50px;
+        border: none;
+        outline: none;
+        text-decoration: none;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(90, 119, 190, 0.3);
+      }
+
+      .back-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(90, 119, 190, 0.4);
+      }
+
+      @media (max-width: 480px) {
+        .container {
+          padding: 2rem 1.5rem;
+        }
+
+        .error-code {
+          font-size: 3rem;
+        }
+
+        h1 {
+          font-size: 1.5rem;
+        }
+
+        .message {
+          font-size: 1rem;
+        }
+      }
+
+      footer {
+        margin-top: 2rem;
+        font-size: 0.9rem;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <img
+        src="/assets/cs_logo.webp"
+        alt="たーけクラウドシステム"
+        class="logo"
+      />
+      <div class="error-code">{status_code}</div>
+      <h1>{title}</h1>
+      <p class="message">{message}</p>
+      <button onclick="history.back()" class="back-button">戻る</button>
+      <footer>
+        <p>たーけクラウドシステム宣伝用リンク</p>
+      </footer>
+    </div>
+  </body>
+</html>
