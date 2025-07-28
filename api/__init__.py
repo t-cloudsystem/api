@@ -1,1 +1,0 @@
-# Flaskを使ったWebAPIのパッケージ
