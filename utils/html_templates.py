@@ -3,7 +3,7 @@ from pathlib import Path
 
 class HTMLTemplates:
     def __init__(self):
-        ads_error_path = Path("assets/ads_error.html")
+        ads_error_path = Path("assets/public/ads_error.html")
         if not ads_error_path.exists():
             raise FileNotFoundError(f"Template file not found: {ads_error_path}")
 
@@ -28,3 +28,7 @@ class HTMLTemplates:
         for key, value in kwargs.items():
             template = template.replace("{"+key+"}", str(value))
         return template
+
+
+with open("assets/docs_description.md", "r", encoding="utf-8") as f:
+    docs_description = f.read()

@@ -62,6 +62,19 @@ class APIRequestHandler:
                 "project_url": f"https://scratch.mit.edu/projects/{870204802}/",
             }
 
+        elif request["type"] == "get_team_by_id":
+            self.logger.info(f"Processing request for team ID: {request['data']['id']}")
+            return {
+                "id": request["data"]["id"],
+                "name": "たーけクラウドシステム管理チーム",
+                "studio_url": "https://scratch.mit.edu/studios/12345678/",
+                "leader": 11,
+                "users": [12, 13, 14],
+                "review": 4.5,
+                "point": 1000,
+                "yield_rate": 50
+            }
+
         raise ValueError(f"Unknown request type: {request['type']}")
 
     async def _communicate_with_cs_server(self, websocket: ClientConnection):

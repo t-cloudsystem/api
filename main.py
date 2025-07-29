@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
 
-from utils.data_model import User
+from utils.data_model import APIInfo, HealthInfo, User, Team, APIError
 from utils.cs_requests import CSRequestIterator, CSRequests
-from utils.html_templates import HTMLTemplates
+from utils.html_templates import HTMLTemplates, docs_description
+from utils.exceptions import CSServerNotConnectedError
+from utils.discord_webhook import DiscordWebhook
 
 load_dotenv(verbose=True)
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -22,9 +24,33 @@ logger.setLevel(DEBUG)
 logger.addHandler(handler)
 logger.propagate = False
 
+
+tags_metadata = [
+    {
+        "name": "Server Info",
+        "description": "サーバーに関する情報を取得します。",
+    },
+    {
+        "name": "Users",
+        "description": "ユーザーデータを取得します。",
+    },
+    {
+        "name": "Teams",
+        "description": "チームデータを取得します。",
+    },
+    {
+        "name": "Ads",
+        "description": "takechi-Adsの表示や情報を取得します。",
+    },
+    {
+        "name": "Internal Endpoint",
+        "description": "API内部や管理者が用いるエンドポイントです。ほとんどは認証が必要です。",
+    },
+]
+
 app = FastAPI(
     title="たーけクラウドシステムAPI v2",
-    description="たーけクラウドシステムの公式APIです。さまざまな機能を提供しています。",
+    description=docs_description,
     version="2.0.0-beta",
     terms_of_service="https://scratch.mit.edu/projects/934818132/",
     contact={
@@ -35,46 +61,55 @@ app = FastAPI(
         "name": "MIT License",
         "url": "https://opensource.org/licenses/MIT",
     },
+    openapi_tags=tags_metadata,
 )
 cs_request_iterator = CSRequestIterator()
 cs_server = CSRequests(cs_request_iterator)
 html_templates = HTMLTemplates()
+discord_webhook = DiscordWebhook(os.getenv("DISCORD_WEBHOOK_URL"))
+responses_templates = {
+    404: {"model": APIError, "description": "Not Found"},
+    500: {"model": APIError, "description": "Internal Server Error"},
+    503: {"model": APIError, "description": "Service Unavailable"},
+}
 
 
-@app.get("/")
-async def read_root():
-    """テスト
-    """
-    return {"Hello": "World"}
+@app.exception_handler(CSServerNotConnectedError)
+async def unicorn_exception_handler(request: Request, exc: CSServerNotConnectedError):
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"error": exc.message},
+    )
 
 
-@app.get("/items/{item_id}")
-async def read_item(item_id: int, q: str = None):
-    return {"item_id": item_id, "q": q}
+@app.get("/", response_model=APIInfo, tags=["Server Info"])
+async def api_info():
+    """APIの基本情報を取得します。"""
+    return APIInfo()
 
 
-@app.get("/")
-async def home():
-    return {
-        "website": "https://scratch.mit.edu/studios/33110478/",
-        "author": "@takechi-scratch in t-cloudsystem admin team",
-        "help": "https://scratch.mit.edu/users/ito-noizi/"
-    }
+@app.get("/health/", response_model=HealthInfo, tags=["Server Info"])
+async def get_health():
+    """APIの稼働状態を取得します。"""
+    return HealthInfo(
+        version="ver.2.0.0(beta)",
+        api_status="OK",
+        cs_status="OK" if cs_server.connected else "Not working"
+    )
 
 
-@app.get("/health/")
-async def health():
-    return {
-        "version": "ver.2.0.0(beta)",
-        "api_status": "OK",
-        "cs_status": "OK" if cs_server.connected else "Not working"
-    }
+@app.post("/report/", tags=["Server Info"])
+async def report_issue(user_id: int, message: str):
+    """ユーザーからの報告をDiscordに送信します。"""
+    await discord_webhook.send_quick_report(user_id, message)
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "Report sent successfully."})
 
 
-@app.get("/user/id/{user_id}/", response_model=User)
+@app.get("/user/id/{user_id}/", response_model=User, responses=responses_templates, tags=["Users"])
 async def get_user_by_id(user_id: int):
+    """ユーザーIDからユーザーデータ（ユーザー名、ポイントなど）を取得します。"""
     if not cs_server.connected:
-        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"error": "CS server is not working"})
+        raise CSServerNotConnectedError()
 
     try:
         user = await cs_server.send_request("get_user_by_id", {"id": user_id})
@@ -88,31 +123,56 @@ async def get_user_by_id(user_id: int):
     return User(**user)
 
 
-@app.get("/user/name/{name}/", response_model=User)
-async def get_user_by_name(name: str):
+@app.get("/user/name/{user_name}/", response_model=User, responses=responses_templates, tags=["Users"])
+async def get_user_by_name(user_name: str):
+    """ユーザー名からユーザーデータ（ユーザーID、ポイントなど）を取得します。"""
     if not cs_server.connected:
-        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"error": "CS server is not working"})
+        raise CSServerNotConnectedError()
 
     try:
-        user = await cs_server.send_request("get_user_by_name", {"name": name})
+        user = await cs_server.send_request("get_user_by_name", {"name": user_name})
     except RuntimeError as e:
         if str(e) == "User not found":
             return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"error": "User not found"})
 
-        logger.error(f"Error fetching user {name}: {str(e)}")
+        logger.error(f"Error fetching user {user_name}: {str(e)}")
         return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": "unknown error occurred"})
 
     return User(**user)
 
 
-@app.get("/user/{user_id}/", deprecated=True)
+@app.get("/user/{user_id}/", deprecated=True, tags=["Users"])
 async def get_user_root(user_id: int):
-    """上の2つのいずれかを利用してください。"""
+    """ユーザーIDからユーザーデータを取得します。上の2つのいずれかを利用してください。"""
     return RedirectResponse(url=f"/user/id/{user_id}/")
 
 
-@app.get("/ads/{ad_id}/")
+@app.get("/team/{team_id}/", response_model=Team, responses=responses_templates, tags=["Teams"])
+async def get_team(team_id: int):
+    """チームIDからチームデータを取得します。"""
+    if not cs_server.connected:
+        raise CSServerNotConnectedError()
+
+    try:
+        team = await cs_server.send_request("get_team_by_id", {"id": team_id})
+    except RuntimeError as e:
+        if str(e) == "Team not found":
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"error": "Team not found"})
+
+        logger.error(f"Error fetching team {team_id}: {str(e)}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": "unknown error occurred"})
+
+    return Team(**team)
+
+
+@app.get("/ads/{ad_id}/",
+         responses={200: {"description": "Redirect to the ad project"},
+                    404: {"content": {"text/html": {}}, "description": "Ad not found"},
+                    503: {"content": {"text/html": {}}, "description": "CS server is not working"}}, tags=["Ads"])
 async def takechi_ad(ad_id: int, request: Request):
+    """takechi-Adsのプロジェクトにリダイレクトします。
+       アクセスできない場合は、HTMLでエラーメッセージを表示します。
+    """
     if not cs_server.connected:
         return HTMLResponse(html_templates.ads_not_available, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
@@ -183,10 +243,11 @@ async def cs_server_websocket(websocket: WebSocket):
         cs_server.connected = False
 
 
-@app.get("/assets/{path:path}")
+@app.get("/assets/{path:path}", tags=["Internal Endpoint"])
 async def get_asset(path: str):
+    """HTMLテンプレートや静的ファイルを取得します。"""
     try:
-        assets_dir = pathlib.Path("assets").resolve()
+        assets_dir = pathlib.Path("assets/public/").resolve()
         asset_path = (assets_dir / path).resolve()
 
         if not str(asset_path).startswith(str(assets_dir)):
