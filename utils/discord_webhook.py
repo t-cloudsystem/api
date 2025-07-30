@@ -8,11 +8,9 @@ class DiscordWebhook:
     async def send_quick_report(self, user_id: int, message: str):
         """Discord Webhookを使用してメッセージを送信する"""
         payload = {
-            "username": "Qiitaさん",
-            "avatar_url": "https://github.com/qiita.png",
             "content": "",
             "embeds": [{
-                "title": "☁システムAPI",
+                "title": "クイック報告",
                 "description": "",
                 "color": 0x5686ff,
                 "fields": [

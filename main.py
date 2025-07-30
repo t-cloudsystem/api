@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
 
-from utils.data_model import APIInfo, HealthInfo, User, Team, APIError
+from utils.data_model import APIInfo, HealthInfo, User, Team, APIError, ReportData, report_message
 from utils.cs_requests import CSRequestIterator, CSRequests
 from utils.html_templates import HTMLTemplates, docs_description
 from utils.exceptions import CSServerNotConnectedError
@@ -99,9 +99,14 @@ async def get_health():
 
 
 @app.post("/report/", tags=["Server Info"])
-async def report_issue(user_id: int, message: str):
-    """ユーザーからの報告をDiscordに送信します。"""
-    await discord_webhook.send_quick_report(user_id, message)
+async def report_issue(report_data: ReportData):
+    """API経由でクイック報告を行います。定型文のみ送信できるため、Scratchにおけるルールには違反しません。"""
+    try:
+        await discord_webhook.send_quick_report(report_data.user_id, report_message[report_data.type])
+    except Exception as e:
+        logger.error(f"Error sending report to Discord: {str(e)}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(message="Failed to send report to Discord."))
+
     return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "Report sent successfully."})
 
 
@@ -192,6 +197,7 @@ async def takechi_ad(ad_id: int, request: Request):
 
 @app.websocket("/admin/cs_server/ws")
 async def cs_server_websocket(websocket: WebSocket):
+    """CSサーバー用WebSocket接続。認証後、CSサーバーへのリクエストを送信します。"""
     await websocket.accept()
 
     # 認証メッセージを待機

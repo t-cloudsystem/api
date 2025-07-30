@@ -1,5 +1,5 @@
 from typing import Literal
-from enum import IntEnum
+from enum import Enum
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -57,14 +57,21 @@ class HealthInfo(BaseModel):
     cs_status: Literal["OK", "Not working", "error"] = Field("OK", description="CSサーバーの稼働状態")
 
 
-class ReportType(IntEnum):
-    LOGIN_ERROR = 1
-    GENERAL_ERROR = 2
-    ABUSE_REPORT = 3
-    OTHER = 4
+class ReportType(str, Enum):
+    LOGIN_ERROR = "login_error"
+    GENERAL_ERROR = "general_error"
+    ABUSE_REPORT = "abuse_report"
+    OTHER = "other"
 
 
 class ReportData(BaseModel):
-    user_id: int = Field(..., description="ユーザーID", examples=[6353])
-    message: str = Field(..., description="送信内容", examples=["This is a test message"])
+    user_id: int = Field(..., description="ユーザーID", examples=[11])
     type: ReportType = Field(..., description="報告の種類", examples=[ReportType.GENERAL_ERROR])
+
+
+report_message = {
+    "login_error": "ログインできない",
+    "general_error": "エラーが発生する",
+    "abuse_report": "不正を発見した",
+    "other": "そのほかの不具合"
+}
