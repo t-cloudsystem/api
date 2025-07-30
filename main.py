@@ -4,10 +4,10 @@ import pathlib
 import hashlib
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status, Query
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse, FileResponse
 
-from utils.data_model import APIInfo, HealthInfo, User, Team, APIError, ReportData, report_message
+from utils.data_model import APIInfo, HealthInfo, User, UserCount, Team, APIError, ReportData, report_message
 from utils.cs_requests import CSRequestIterator, CSRequests
 from utils.html_templates import HTMLTemplates, docs_description
 from utils.exceptions import CSServerNotConnectedError
@@ -74,6 +74,13 @@ responses_templates = {
 }
 
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """アプリケーション終了時のクリーンアップ"""
+    logger.info("Shutting down application...")
+    cs_server.disconnect()
+
+
 @app.exception_handler(CSServerNotConnectedError)
 async def unicorn_exception_handler(request: Request, exc: CSServerNotConnectedError):
     return JSONResponse(
@@ -105,7 +112,7 @@ async def report_issue(report_data: ReportData):
         await discord_webhook.send_quick_report(report_data.user_id, report_message[report_data.type])
     except Exception as e:
         logger.error(f"Error sending report to Discord: {str(e)}")
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(message="Failed to send report to Discord."))
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(error="Failed to send report to Discord."))
 
     return JSONResponse(status_code=status.HTTP_200_OK, content={"message": "Report sent successfully."})
 
@@ -123,7 +130,7 @@ async def get_user_by_id(user_id: int):
             return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"error": "User not found"})
 
         logger.error(f"Error fetching user {user_id}: {str(e)}")
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": "unknown error occurred"})
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(error="unknown error occurred"))
 
     return User(**user)
 
@@ -141,9 +148,39 @@ async def get_user_by_name(user_name: str):
             return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"error": "User not found"})
 
         logger.error(f"Error fetching user {user_name}: {str(e)}")
-        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"error": "unknown error occurred"})
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(error="unknown error occurred"))
 
     return User(**user)
+
+
+@app.get("/user/count/", response_model=UserCount, responses=responses_templates, tags=["Users"])
+async def get_user_count():
+    """現在の登録者数を取得します。"""
+    if not cs_server.connected:
+        raise CSServerNotConnectedError()
+
+    try:
+        user_count = await cs_server.send_request("get_user_count", {})
+    except RuntimeError as e:
+        logger.error(f"Error fetching user count: {str(e)}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(error="unknown error occurred"))
+
+    return UserCount(**user_count)
+
+
+@app.get("/user/ranking/", response_model=list[User], responses=responses_templates, tags=["Users"])
+async def get_user_ranking(limit: int = Query(10, ge=1, le=50)):
+    """ユーザーのポイントランキングを取得します。"""
+    if not cs_server.connected:
+        raise CSServerNotConnectedError()
+
+    try:
+        ranking = await cs_server.send_request("get_user_ranking", {"limit": limit})
+    except RuntimeError as e:
+        logger.error(f"Error fetching user ranking: {str(e)}")
+        return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=APIError(error="unknown error occurred"))
+
+    return [User(**user) for user in ranking]
 
 
 @app.get("/user/{user_id}/", deprecated=True, tags=["Users"])

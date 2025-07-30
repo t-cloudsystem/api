@@ -17,6 +17,10 @@ class UserForAdmin(User):
     is_deleted: bool = Field(default=False, description="ユーザーが削除されているかどうか")
 
 
+class UserCount(BaseModel):
+    user_count: int = Field(..., description="登録者数", examples=[100])
+
+
 class Team(BaseModel):
     id: int = Field(..., description="チームID", examples=[1])
     name: str = Field(..., description="チーム名", examples=["たーけクラウドシステム管理チーム"])
